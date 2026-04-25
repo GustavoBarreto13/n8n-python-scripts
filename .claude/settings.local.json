@@ -3,7 +3,10 @@
     "allow": [
       "mcp__claude_ai_n8n__create_workflow_from_code",
       "mcp__claude_ai_n8n__update_workflow",
-      "mcp__claude_ai_n8n__validate_workflow"
+      "mcp__claude_ai_n8n__validate_workflow",
+      "mcp__claude_ai_n8n__search_nodes",
+      "mcp__claude_ai_n8n__get_sdk_reference",
+      "mcp__claude_ai_n8n__get_node_types"
     ]
   }
 }
