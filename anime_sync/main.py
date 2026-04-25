@@ -332,14 +332,16 @@ class NotionClient:
         time.sleep(NOTION_DELAY)
         return resp is not None
 
-    def find_existing_episodes(self, parent_page_id: str) -> dict[str, dict]:
+    def find_existing_episodes(self, parent_page_id: str) -> dict[int, dict]:
         """
         Query all Episode pages that belong to a given Season page.
 
-        Returns a dict keyed by the episode's Name (e.g. "#1 - Naruto - Episode 1")
-        so we can quickly check if an episode already exists before creating it.
+        Returns a dict keyed by episode number (int) — extracted from Name like
+        "#8 - [Oshi no Ko] 3rd Season - Episódio 8". Keying by number (not full name)
+        means the match works even when the existing title is a placeholder and
+        Jikan/AniList later provides the real episode title.
 
-        Value: {"page_id": str, "status": str | None}
+        Value: {"page_id": str, "status": str | None, "name": str}
         """
         url = f"{self.BASE}/databases/{NOTION_DB_ANIMES}/query"
         body = {
@@ -352,7 +354,7 @@ class NotionClient:
             },
             "page_size": 100,
         }
-        existing: dict[str, dict] = {}
+        existing: dict[int, dict] = {}
         has_more = True
         start_cursor = None
 
@@ -368,9 +370,13 @@ class NotionClient:
                 if not name_arr:
                     continue
                 name = name_arr[0]["plain_text"].strip()
+                m = re.match(r"^#(\d+)\s", name)
+                if not m:
+                    continue
+                ep_num = int(m.group(1))
                 status_obj = props.get("Episode Status", {}).get("select")
                 status = status_obj["name"] if status_obj else None
-                existing[name] = {"page_id": page["id"], "status": status}
+                existing[ep_num] = {"page_id": page["id"], "status": status, "name": name}
             has_more = resp.get("has_more", False)
             start_cursor = resp.get("next_cursor")
             time.sleep(NOTION_DELAY)
@@ -830,24 +836,21 @@ def process_anime(
 
     # Step 8: Load existing Notion episodes to avoid duplicates.
     existing = notion.find_existing_episodes(anime.page_id)
-    log.debug(f"  {len(existing)} episódios já existem no Notion")
+    log.info(f"  merged={len(merged)} episódios | existing no Notion={len(existing)}")
 
     # Step 9: Create new episodes or update changed ones.
+    # Match by episode NUMBER (not full title) so placeholder titles like
+    # "Episódio 8" get correctly updated when Jikan provides the real title.
     for ep in merged:
-        # Name format: "#1 - Attack on Titan - Dual Blades" — used as the unique key.
         notion_name = f"#{ep.number} - {anime.title} - {ep.title}"
-        key = notion_name.strip()
-        ex = existing.get(key)
+        ex = existing.get(ep.number)
 
         if not ex:
-            # Episode doesn't exist yet — create it.
             if notion.create_episode(anime.page_id, ep, notion_name):
                 stats.episodes_created += 1
         elif ex["status"] == "Lançado":
-            # Episode is already marked as aired — no need to update anything.
             stats.episodes_skipped += 1
         else:
-            # Episode exists but status may have changed (e.g., "Agendado" → "Lançado").
             if notion.update_episode(ex["page_id"], ep, notion_name):
                 stats.episodes_updated += 1
 
