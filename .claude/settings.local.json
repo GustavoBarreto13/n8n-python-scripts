@@ -6,7 +6,11 @@
       "mcp__claude_ai_n8n__validate_workflow",
       "mcp__claude_ai_n8n__search_nodes",
       "mcp__claude_ai_n8n__get_sdk_reference",
-      "mcp__claude_ai_n8n__get_node_types"
+      "mcp__claude_ai_n8n__get_node_types",
+      "mcp__claude_ai_n8n__get_workflow_details",
+      "Bash(python3 -c ' *)",
+      "PowerShell($d = Get-Content 'C:\\\\Users\\\\gusta\\\\.claude\\\\projects\\\\c--Users-gusta-Documents-GitHub-n8n-python-scripts\\\\d4f3d332-bce2-41a7-9db5-252b67d85a3f\\\\tool-results\\\\mcp-claude_ai_n8n-get_workflow_details-1777157270130.txt' -Raw | ConvertFrom-Json; Write-Output \\('Name: ' + $d.workflow.name\\); Write-Output \\('Active: ' + $d.workflow.active\\); Write-Output \\('TriggerCount: ' + $d.workflow.triggerCount\\); Write-Output ''; Write-Output 'NODES:'; $d.workflow.nodes | ForEach-Object { Write-Output \\('  - ' + $_.name + ' [' + $_.type + ' v' + $_.typeVersion + ']'\\) })",
+      "PowerShell($d = Get-Content 'C:\\\\Users\\\\gusta\\\\.claude\\\\projects\\\\c--Users-gusta-Documents-GitHub-n8n-python-scripts\\\\d4f3d332-bce2-41a7-9db5-252b67d85a3f\\\\tool-results\\\\mcp-claude_ai_n8n-get_workflow_details-1777157270130.txt' -Raw | ConvertFrom-Json; $d.workflow.nodes | ForEach-Object { Write-Output \\('=== ' + $_.name + ' ==='\\); Write-Output \\($_.name.Length\\); Write-Output '' } | Select-Object -First 60)"
     ]
   }
 }

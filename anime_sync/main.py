@@ -897,17 +897,22 @@ def main() -> int:
         log.warning("TMDB_TOKEN não configurado — sem thumbnails")
 
     notion = NotionClient(notion_token, dry_run=args.dry_run)
+    stats = SyncStats()
 
     # Webhook mode: sync one specific anime. Batch mode: sync all currently airing.
     if args.page_id:
-        animes = [notion.get_anime_page(args.page_id)]
-        animes = [a for a in animes if a]  # filter out None if page_id was invalid
+        anime = notion.get_anime_page(args.page_id)
+        if anime is None:
+            log.error(f"Notion page not found: {args.page_id}")
+            stats.errors.append(f"page_not_found: {args.page_id}")
+            animes = []
+        else:
+            animes = [anime]
     else:
         animes = notion.query_airing_animes()
 
     log.info(f"Vai processar {len(animes)} anime(s)")
 
-    stats = SyncStats()
     for anime in animes:
         if not anime.has_mal_id:
             log.warning(f"  {anime.title}: sem MAL_ID, pulando")
