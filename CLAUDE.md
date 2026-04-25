@@ -79,17 +79,12 @@ Credenciais de APIs externas (MAL, AniList, TMDB, etc.) devem ser passadas como 
 ```
 n8n-python-scripts/
 ├── CLAUDE.md                  ← este arquivo
-├── requirements.txt           ← libs Python compartilhadas
+├── requirements.txt           ← libs Python compartilhadas (requests)
 ├── anime_sync/
-│   ├── main.py                ← entry point chamado pelo n8n
-│   ├── tmdb.py                ← módulo TMDB
-│   ├── mal.py                 ← módulo MAL/Jikan
-│   ├── anilist.py             ← módulo AniList
-│   ├── notion.py              ← módulo Notion
-│   └── README.md
+│   ├── main.py                ← entry point + toda a lógica (Jikan, AniList, TMDB, Notion)
+│   └── CLAUDE.md
 └── lucy_digest/               ← futuro
-    ├── main.py
-    └── README.md
+    └── main.py
 ```
 
 Cada script fica numa subpasta própria com seu `main.py` como entry point.

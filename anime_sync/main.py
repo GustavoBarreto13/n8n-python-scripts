@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-anime_sync.py
-=============
+main.py (anime_sync/main.py)
+============================
 Sincroniza animes entre Jikan/AniList/TMDB → Notion.
 
 Substitui ~10 Code nodes + HTTP Requests do workflow MyAnimeBoxd.
 
 Uso:
     # Sync todos os animes "Currently Airing" do Notion
-    python3 anime_sync.py
+    python3 main.py
 
     # Sync um anime específico (via webhook do Notion)
-    python3 anime_sync.py --page-id <notion_page_id>
+    python3 main.py --page-id <notion_page_id>
 
     # Dry-run (não escreve no Notion, só loga)
-    python3 anime_sync.py --dry-run
+    python3 main.py --dry-run
 
     # Verbose (logs detalhados)
-    python3 anime_sync.py -v
+    python3 main.py -v
 
 Saída: JSON estruturado com resumo da execução via stdout (última linha).
 Logs intermediários vão pro stderr.
@@ -899,14 +899,14 @@ def main() -> int:
 
     # Print the final JSON to stdout — this is what the n8n Code node reads and parses.
     result = {
-        "ok": True,
+        "ok": not bool(stats.errors),
         "dry_run": args.dry_run,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         **stats.to_dict(),
     }
     print(json.dumps(result, ensure_ascii=False))
     log.info(f"✅ Fim: {stats.to_dict()}")
-    return 0 if not stats.errors else 2
+    return 0  # always 0 — execSync throws on non-zero, n8n reads "ok" field instead
 
 
 if __name__ == "__main__":
