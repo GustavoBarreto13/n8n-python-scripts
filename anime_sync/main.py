@@ -221,10 +221,12 @@ class SyncStats:
     episodes_updated: int = 0   # existing episode pages updated (status changed)
     episodes_skipped: int = 0   # episodes already "Lançado" — no update needed
     errors: list[str] = field(default_factory=list)  # per-anime error messages
+    # Per-anime diagnostic info (only populated in webhook mode, single anime)
+    debug: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Serialize to a flat dict for inclusion in the final JSON output."""
-        return {
+        out = {
             "animes_processed": self.animes_processed,
             "animes_skipped": self.animes_skipped,
             "episodes_created": self.episodes_created,
@@ -232,6 +234,9 @@ class SyncStats:
             "episodes_skipped": self.episodes_skipped,
             "errors": self.errors,
         }
+        if self.debug:
+            out["debug"] = self.debug
+        return out
 
 
 # ============================================================
@@ -838,6 +843,9 @@ def process_anime(
     existing = notion.find_existing_episodes(anime.page_id)
     log.info(f"  merged={len(merged)} episódios | existing no Notion={len(existing)}")
 
+    # Diagnostic trace (surfaced in JSON output) — shows the decision per episode.
+    decisions: list[dict] = []
+
     # Step 9: Create new episodes or update changed ones.
     # Match by episode NUMBER (not full title) so placeholder titles like
     # "Episódio 8" get correctly updated when Jikan provides the real title.
@@ -846,17 +854,30 @@ def process_anime(
         ex = existing.get(ep.number)
 
         if not ex:
+            decisions.append({"n": ep.number, "action": "create", "new_name": notion_name})
             if notion.create_episode(anime.page_id, ep, notion_name):
                 stats.episodes_created += 1
         elif ex["status"] == "Lançado" and ex["name"] == notion_name:
-            # Already aired AND title matches what we'd write — nothing to refresh.
+            decisions.append({"n": ep.number, "action": "skip", "reason": "lancado_same_name"})
             stats.episodes_skipped += 1
         else:
-            # Either status != "Lançado" (likely "Agendado" → may need status flip)
-            # OR the stored title is stale (e.g., placeholder "Episódio 8" while
-            # Jikan now provides the real title). Update either way.
+            decisions.append({
+                "n": ep.number,
+                "action": "update",
+                "ex_status": ex["status"],
+                "ex_name": ex["name"],
+                "new_name": notion_name,
+            })
             if notion.update_episode(ex["page_id"], ep, notion_name):
                 stats.episodes_updated += 1
+
+    stats.debug[anime.title] = {
+        "merged_count": len(merged),
+        "existing_count": len(existing),
+        "merged_numbers": sorted([ep.number for ep in merged]),
+        "existing_numbers": sorted(existing.keys()),
+        "decisions": decisions,
+    }
 
     stats.animes_processed += 1
 
