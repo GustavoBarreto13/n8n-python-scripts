@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_n8n__create_workflow_from_code",
+      "mcp__claude_ai_n8n__update_workflow",
+      "mcp__claude_ai_n8n__validate_workflow"
+    ]
+  }
+}

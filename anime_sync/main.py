@@ -38,9 +38,32 @@ import sys            # sys.exit() and sys.stderr for logging stream
 import time           # time.sleep() for rate limiting between API calls
 from dataclasses import dataclass, field   # lightweight data containers (AnimeInput, Episode, SyncStats)
 from datetime import datetime, timezone    # parse/format ISO 8601 dates and UTC timestamps
+from pathlib import Path                   # resolve .env file path relative to this script
 from typing import Any, Optional           # type hints
 
 import requests  # HTTP client for all external API calls
+
+
+def _load_dotenv() -> None:
+    """Load key=value pairs from /home/node/scripts/.env into os.environ.
+
+    Uses setdefault so real env vars (Dokploy/container) always win.
+    No-op if the file doesn't exist.
+    """
+    env_path = Path(__file__).parent.parent / ".env"
+    try:
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv()
 
 
 # ============================================================
