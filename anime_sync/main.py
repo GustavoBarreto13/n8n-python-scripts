@@ -848,9 +848,13 @@ def process_anime(
         if not ex:
             if notion.create_episode(anime.page_id, ep, notion_name):
                 stats.episodes_created += 1
-        elif ex["status"] == "Lançado":
+        elif ex["status"] == "Lançado" and ex["name"] == notion_name:
+            # Already aired AND title matches what we'd write — nothing to refresh.
             stats.episodes_skipped += 1
         else:
+            # Either status != "Lançado" (likely "Agendado" → may need status flip)
+            # OR the stored title is stale (e.g., placeholder "Episódio 8" while
+            # Jikan now provides the real title). Update either way.
             if notion.update_episode(ex["page_id"], ep, notion_name):
                 stats.episodes_updated += 1
 
