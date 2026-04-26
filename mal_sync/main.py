@@ -21,9 +21,12 @@ Saída: JSON em uma linha no stdout. Logs no stderr.
 Variáveis de ambiente:
     MAL_CLIENT_ID       - obrigatório
     MAL_CLIENT_SECRET   - obrigatório
-    MAL_REFRESH_TOKEN   - obrigatório no primeiro run; depois lê do .last_sync.json
     NOTION_TOKEN        - obrigatório
     NOTION_DB_ANIMES    - opcional (default hardcoded)
+
+Bootstrap: rode `python3 get_token.py` localmente uma vez para gerar
+mal_sync/.last_sync.json com os tokens iniciais. Após isso main.py rotaciona
+o refresh_token automaticamente a cada refresh.
 """
 
 import argparse
