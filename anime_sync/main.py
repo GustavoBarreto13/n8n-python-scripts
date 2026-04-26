@@ -427,12 +427,11 @@ class NotionClient:
             "Parent Item": {"relation": [{"id": parent_page_id}]},
         }
         if ep.aired:
-            # Notion rejects the combo of "time_zone" + a datetime that already has
-            # offset/Z. Only set time_zone for date-only strings ("YYYY-MM-DD").
-            date_obj: dict = {"start": ep.aired}
-            if "T" not in ep.aired:
-                date_obj["time_zone"] = "America/Sao_Paulo"
-            props["Air Date"] = {"date": date_obj}
+            # Air Date is a date-only column in Notion. AniList provides datetime
+            # ISO ("2026-04-25T22:00:00+00:00") and Jikan provides date ("2026-04-25");
+            # truncate to first 10 chars and never pass time_zone (Notion 400s on the
+            # combo of time_zone with date-only or with offset-aware datetime).
+            props["Air Date"] = {"date": {"start": ep.aired[:10]}}
         body: dict = {
             "parent": {"database_id": NOTION_DB_ANIMES},
             "properties": props,
@@ -462,12 +461,11 @@ class NotionClient:
             "Episode Status": {"select": {"name": ep.status}},
         }
         if ep.aired:
-            # Notion rejects the combo of "time_zone" + a datetime that already has
-            # offset/Z. Only set time_zone for date-only strings ("YYYY-MM-DD").
-            date_obj: dict = {"start": ep.aired}
-            if "T" not in ep.aired:
-                date_obj["time_zone"] = "America/Sao_Paulo"
-            props["Air Date"] = {"date": date_obj}
+            # Air Date is a date-only column in Notion. AniList provides datetime
+            # ISO ("2026-04-25T22:00:00+00:00") and Jikan provides date ("2026-04-25");
+            # truncate to first 10 chars and never pass time_zone (Notion 400s on the
+            # combo of time_zone with date-only or with offset-aware datetime).
+            props["Air Date"] = {"date": {"start": ep.aired[:10]}}
         body: dict = {"properties": props}
         if ep.thumbnail:
             body["cover"] = {"type": "external", "external": {"url": ep.thumbnail}}
