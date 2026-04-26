@@ -387,10 +387,11 @@ class NotionClient:
         time.sleep(NOTION_DELAY)
         return resp is not None
 
-    def create_anime(self, mal_id: str, title: str, mal_status: str, episodes_watched: int, score: Optional[int]) -> bool:
+    def create_anime(self, mal_id: str, title: str, mal_status: str, episodes_watched: int, score: Optional[int]) -> Optional[str]:
+        """Returns the created page_id, or None on failure."""
         if self.dry_run:
             log.info(f"[DRY] create {title} (MAL={mal_id})")
-            return True
+            return f"dry-run-{mal_id}"
         url = f"{self.BASE}/pages"
         props: dict = {
             "Name": {"title": [{"text": {"content": title}}]},
@@ -406,7 +407,9 @@ class NotionClient:
         }
         resp = http_request("POST", url, headers=self.headers, json_body=body)
         time.sleep(NOTION_DELAY)
-        return resp is not None
+        if resp is None:
+            return None
+        return resp.get("id")
 
 
 # ============================================================
@@ -485,6 +488,8 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False))
         return 0
 
+    created_page_ids: list[str] = []
+
     for entry in mal_entries:
         mal_id = entry["mal_id"]
         title = entry["title"]
@@ -506,16 +511,17 @@ def main() -> int:
                     err = get_last_http_error() or "unknown"
                     errors.append(f"update_failed {title}: {err}")
             else:
-                ok = notion.create_anime(
+                new_page_id = notion.create_anime(
                     mal_id,
                     title,
                     entry["mal_status"],
                     entry["episodes_watched"],
                     score,
                 )
-                if ok:
+                if new_page_id:
                     created += 1
-                    log.info(f"  ✓ create: {title}")
+                    created_page_ids.append(new_page_id)
+                    log.info(f"  ✓ create: {title} (page={new_page_id})")
                 else:
                     err = get_last_http_error() or "unknown"
                     errors.append(f"create_failed {title}: {err}")
@@ -535,6 +541,7 @@ def main() -> int:
         "mal_entries_after_delta": len(mal_entries),
         "updated": updated,
         "created": created,
+        "created_page_ids": created_page_ids,
         "errors": errors,
     }
     print(json.dumps(result, ensure_ascii=False))

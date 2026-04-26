@@ -115,6 +115,6 @@ Para adicionar libs: editar o `Dockerfile` do n8n (requer rebuild).
 ## Infraestrutura
 
 - **Container**: `node:22-bookworm` com Python em `/opt/venv/bin/python3`
-- **Volume**: `/opt/n8n-scripts` (host) → `/home/node/scripts` (container)
+- **Volume**: `/opt/n8n-python-scripts` (host) → `/home/node/scripts` (container)
 - **Sync**: GitHub webhook → workflow `GitHub Scripts Sync` (`GOl6dewkyrftw9yU`)
 - **n8n**: `https://n8n.gusstavo42-vps.cloud`
