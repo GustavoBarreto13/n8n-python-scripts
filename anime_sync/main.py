@@ -170,7 +170,13 @@ def http_request(
                 log.debug(f"404 em {url}")
                 return None
 
-            resp.raise_for_status()  # raise on any other 4xx
+            if 400 <= resp.status_code < 500:
+                # Client error (validation, auth, permissions) — won't improve with retry.
+                # Log the response body so we know WHY Notion/etc. rejected the call.
+                body_preview = (resp.text or "")[:500]
+                log.error(f"{resp.status_code} {method} {url}: {body_preview}")
+                return None
+
             return resp.json() if resp.content else {}
 
         except requests.RequestException as e:
@@ -854,22 +860,29 @@ def process_anime(
         ex = existing.get(ep.number)
 
         if not ex:
-            decisions.append({"n": ep.number, "action": "create", "new_name": notion_name})
-            if notion.create_episode(anime.page_id, ep, notion_name):
+            ok = notion.create_episode(anime.page_id, ep, notion_name)
+            decisions.append({"n": ep.number, "action": "create" if ok else "create_FAILED", "new_name": notion_name})
+            if ok:
                 stats.episodes_created += 1
+            else:
+                stats.errors.append(f"create_failed: ep {ep.number} ({anime.title})")
         elif ex["status"] == "Lançado" and ex["name"] == notion_name:
             decisions.append({"n": ep.number, "action": "skip", "reason": "lancado_same_name"})
             stats.episodes_skipped += 1
         else:
+            ok = notion.update_episode(ex["page_id"], ep, notion_name)
             decisions.append({
                 "n": ep.number,
-                "action": "update",
+                "action": "update" if ok else "update_FAILED",
                 "ex_status": ex["status"],
                 "ex_name": ex["name"],
                 "new_name": notion_name,
+                "new_status": ep.status,
             })
-            if notion.update_episode(ex["page_id"], ep, notion_name):
+            if ok:
                 stats.episodes_updated += 1
+            else:
+                stats.errors.append(f"update_failed: ep {ep.number} ({anime.title})")
 
     stats.debug[anime.title] = {
         "merged_count": len(merged),
