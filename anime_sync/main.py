@@ -103,6 +103,17 @@ RETRY_BACKOFF = 2.0   # base seconds; doubles each retry (2s → 4s → 8s)
 # clean for the single JSON line printed at the end (parsed by the n8n Code node).
 log = logging.getLogger("anime_sync")
 
+# Stores the last HTTP 4xx response body so callers can attach it to error reports.
+_last_http_error: Optional[str] = None
+
+
+def get_last_http_error() -> Optional[str]:
+    """Return (and clear) the body preview from the most recent 4xx response."""
+    global _last_http_error
+    err = _last_http_error
+    _last_http_error = None
+    return err
+
 
 def setup_logging(verbose: bool = False) -> None:
     """Configure logging level and format. Called once at startup."""
@@ -173,7 +184,9 @@ def http_request(
             if 400 <= resp.status_code < 500:
                 # Client error (validation, auth, permissions) — won't improve with retry.
                 # Log the response body so we know WHY Notion/etc. rejected the call.
+                global _last_http_error
                 body_preview = (resp.text or "")[:500]
+                _last_http_error = f"{resp.status_code} {method}: {body_preview}"
                 log.error(f"{resp.status_code} {method} {url}: {body_preview}")
                 return None
 
@@ -414,7 +427,12 @@ class NotionClient:
             "Parent Item": {"relation": [{"id": parent_page_id}]},
         }
         if ep.aired:
-            props["Air Date"] = {"date": {"start": ep.aired, "time_zone": "America/Sao_Paulo"}}
+            # Notion rejects the combo of "time_zone" + a datetime that already has
+            # offset/Z. Only set time_zone for date-only strings ("YYYY-MM-DD").
+            date_obj: dict = {"start": ep.aired}
+            if "T" not in ep.aired:
+                date_obj["time_zone"] = "America/Sao_Paulo"
+            props["Air Date"] = {"date": date_obj}
         body: dict = {
             "parent": {"database_id": NOTION_DB_ANIMES},
             "properties": props,
@@ -444,7 +462,12 @@ class NotionClient:
             "Episode Status": {"select": {"name": ep.status}},
         }
         if ep.aired:
-            props["Air Date"] = {"date": {"start": ep.aired, "time_zone": "America/Sao_Paulo"}}
+            # Notion rejects the combo of "time_zone" + a datetime that already has
+            # offset/Z. Only set time_zone for date-only strings ("YYYY-MM-DD").
+            date_obj: dict = {"start": ep.aired}
+            if "T" not in ep.aired:
+                date_obj["time_zone"] = "America/Sao_Paulo"
+            props["Air Date"] = {"date": date_obj}
         body: dict = {"properties": props}
         if ep.thumbnail:
             body["cover"] = {"type": "external", "external": {"url": ep.thumbnail}}
@@ -861,16 +884,18 @@ def process_anime(
 
         if not ex:
             ok = notion.create_episode(anime.page_id, ep, notion_name)
-            decisions.append({"n": ep.number, "action": "create" if ok else "create_FAILED", "new_name": notion_name})
+            err = None if ok else get_last_http_error()
+            decisions.append({"n": ep.number, "action": "create" if ok else "create_FAILED", "new_name": notion_name, "err": err})
             if ok:
                 stats.episodes_created += 1
             else:
-                stats.errors.append(f"create_failed: ep {ep.number} ({anime.title})")
+                stats.errors.append(f"create_failed: ep {ep.number} ({anime.title}) — {err}")
         elif ex["status"] == "Lançado" and ex["name"] == notion_name:
             decisions.append({"n": ep.number, "action": "skip", "reason": "lancado_same_name"})
             stats.episodes_skipped += 1
         else:
             ok = notion.update_episode(ex["page_id"], ep, notion_name)
+            err = None if ok else get_last_http_error()
             decisions.append({
                 "n": ep.number,
                 "action": "update" if ok else "update_FAILED",
@@ -878,11 +903,12 @@ def process_anime(
                 "ex_name": ex["name"],
                 "new_name": notion_name,
                 "new_status": ep.status,
+                "err": err,
             })
             if ok:
                 stats.episodes_updated += 1
             else:
-                stats.errors.append(f"update_failed: ep {ep.number} ({anime.title})")
+                stats.errors.append(f"update_failed: ep {ep.number} ({anime.title}) — {err}")
 
     stats.debug[anime.title] = {
         "merged_count": len(merged),
