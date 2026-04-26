@@ -83,6 +83,10 @@ n8n-python-scripts/
 ├── anime_sync/
 │   ├── main.py                ← entry point + toda a lógica (Jikan, AniList, TMDB, Notion)
 │   └── CLAUDE.md
+├── mal_sync/
+│   ├── main.py                ← MAL animelist → Notion (delta sync por updated_at)
+│   ├── CLAUDE.md
+│   └── .last_sync.json        ← runtime, gitignored (state + tokens MAL rotacionados)
 └── lucy_digest/               ← futuro
     └── main.py
 ```
@@ -179,6 +183,7 @@ Alguns MAL IDs problemáticos ficam em `BLACKLIST_MAL_IDS` no `main.py`. Adicion
 | Workflow | ID | Descrição |
 |---|---|---|
 | MyAnimeBoxd | `N_l9odG0de5B1LlSXQTdO` | Trigger principal do anime_sync |
+| MAL Sync | `RA5ojUMIbU7Kma6M` | Trigger do mal_sync (Schedule → Code node) |
 | GitHub Scripts Sync | `GOl6dewkyrftw9yU` | Webhook do GitHub → git pull |
 | N8N Agent AI | `sepWZYkldB2KcJQSbEQ-V` | Agente principal com MCP |
 

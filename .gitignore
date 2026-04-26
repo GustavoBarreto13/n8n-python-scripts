@@ -1,3 +1,5 @@
 .env
 __pycache__/
 *.pyc
+mal_sync/.last_sync.json
+mal_sync/.last_sync.json.tmp
