@@ -294,31 +294,38 @@ class TickTickAuth:
         if not self.client_id or not self.client_secret:
             raise RuntimeError("TICKTICK_CLIENT_ID e TICKTICK_CLIENT_SECRET são obrigatórios")
 
-        self.access_token = state.get("ticktick_access_token")
+        self.access_token = state.get("ticktick_access_token") or os.getenv("TICKTICK_ACCESS_TOKEN")
         self.refresh_token = state.get("ticktick_refresh_token") or os.getenv("TICKTICK_REFRESH_TOKEN")
-        self.expires_at = state.get("ticktick_expires_at")
+        self.expires_at = state.get("ticktick_expires_at") or os.getenv("TICKTICK_EXPIRES_AT")
 
-        if not self.refresh_token:
+        if not self.refresh_token and not self.access_token:
             raise RuntimeError(
-                "TICKTICK_REFRESH_TOKEN não configurado e não há token salvo em .last_sync.json. "
-                "Rode `python3 get_token.py` localmente para gerar."
+                "Nenhum token TickTick disponível. Configure TICKTICK_ACCESS_TOKEN (ou TICKTICK_REFRESH_TOKEN) "
+                "no ambiente, ou rode `python3 get_token.py` localmente e copie o .last_sync.json pro VPS."
             )
 
         self._state = state
 
     def _is_expired(self) -> bool:
-        if not self.access_token or not self.expires_at:
+        if not self.access_token:
             return True
+        if not self.expires_at:
+            return False  # sem data de expiração, assume válido
         try:
             exp = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
         except ValueError:
-            return True
+            return False
         if exp.tzinfo is None:
             exp = exp.replace(tzinfo=timezone.utc)
         return datetime.now(timezone.utc) >= exp - timedelta(minutes=5)
 
     def get_access_token(self) -> str:
         if self._is_expired():
+            if not self.refresh_token:
+                raise RuntimeError(
+                    "Access token expirado e TICKTICK_REFRESH_TOKEN não disponível. "
+                    "Rode `python3 get_token.py` novamente para renovar."
+                )
             self._refresh()
         return self.access_token  # type: ignore[return-value]
 

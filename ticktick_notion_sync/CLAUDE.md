@@ -94,9 +94,14 @@ Cache de timestamps por entrada. Se sumir, a próxima rodada apenas re-sincroniz
 |---|---|---|
 | `TICKTICK_CLIENT_ID` | Sim | App TickTick — Client ID |
 | `TICKTICK_CLIENT_SECRET` | Sim | App TickTick — Client Secret |
+| `TICKTICK_ACCESS_TOKEN` | Sim* | Access token gerado pelo `get_token.py` — alternativa ao refresh flow |
+| `TICKTICK_REFRESH_TOKEN` | Sim* | Refresh token (opcional se ACCESS_TOKEN ainda for válido) |
+| `TICKTICK_EXPIRES_AT` | Não | ISO 8601 da expiração do access token (opcional) |
 | `NOTION_TOKEN` | Sim | Bearer token da integration do Notion |
 | `NOTION_DB_TASKS` | Não | Override do DB ID (default: `17ef090ea3ca81829678e3ca4b82a8a6`) |
 | `OPENAPI_MCP_HEADERS` | Fallback | Usado pra extrair `NOTION_TOKEN` se não estiver direto |
+
+\* Pelo menos um dos dois (`TICKTICK_ACCESS_TOKEN` ou `TICKTICK_REFRESH_TOKEN`) é obrigatório. O TickTick nem sempre retorna `refresh_token` no fluxo OAuth — nesse caso use `TICKTICK_ACCESS_TOKEN` diretamente (token tem vida longa, ~6 meses).
 
 ---
 
