@@ -101,6 +101,7 @@ PROJECT_TAG_MAP: dict[str, Optional[str]] = {
     "69e7f665ebd7ba00000000d2": "18ef090e-a3ca-8091-816f-fcd510922d01",  # Pessoal
     "688fa749ebcebb000000056c": "34bf090e-a3ca-81fe-b23b-f315e52e650a",  # Lista de Compras
     "69e6693a8f08e6e745ec0032": "18ef090e-a3ca-8091-816f-fcd510922d01",  # 🎂 Aniversários → Pessoal
+    "69f3cac2ebd7f6000000034e": "18ef090e-a3ca-80de-8ea8-ca9712491d19",  # 💼Work
     "6785ccb7c71c710000000221": None,                                    # 🏐Misc
     "inbox": None,
 }
@@ -115,6 +116,7 @@ TAG_PROJECT_MAP: dict[str, str] = {
     "249f090e-a3ca-8007-9533-f30ff0c10a7c": "69e7f6d4ebd7ba0000000128",  # Finanças
     "18ef090e-a3ca-8091-816f-fcd510922d01": "69e7f665ebd7ba00000000d2",  # Pessoal-Social
     "34bf090e-a3ca-81fe-b23b-f315e52e650a": "688fa749ebcebb000000056c",  # Lista de Compras
+    "18ef090e-a3ca-80de-8ea8-ca9712491d19": "69f3cac2ebd7f6000000034e",  # Work
 }
 
 # TickTick priority (0/1/3/5) → Notion select option name.

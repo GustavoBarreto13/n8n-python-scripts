@@ -201,6 +201,7 @@ Em `main.py` como `PROJECT_TAG_MAP` e `TAG_PROJECT_MAP`.
 | 🙅Personal - Social | `69e7f665ebd7ba00000000d2` | Pessoal | `18ef090e-a3ca-8091-816f-fcd510922d01` |
 | 🛒Lista de Compras | `688fa749ebcebb000000056c` | Lista de Compras | `34bf090e-a3ca-81fe-b23b-f315e52e650a` |
 | 🎂 Aniversários | `69e6693a8f08e6e745ec0032` | Pessoal | `18ef090e-a3ca-8091-816f-fcd510922d01` |
+| 💼Work | `69f3cac2ebd7f6000000034e` | Work | `18ef090e-a3ca-80de-8ea8-ca9712491d19` |
 | 🏐Misc | `6785ccb7c71c710000000221` | *(sem tag)* | — |
 | Inbox | `inbox` | *(sem tag)* | — |
 

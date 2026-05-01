@@ -56,6 +56,21 @@ return [{ json: data }];
 
 **Importante**: o script Python deve sempre retornar JSON válido via `print()` no stdout. Erros devem ser capturados e retornados como JSON também.
 
+### Scripts de longa duração (> 30s)
+
+O n8n task runner aborta tasks que ficam mais de 30s sem heartbeat com:
+> `Task execution aborted because runner became unresponsive`
+
+**Solução**: adicionar no Dokploy (env vars do container):
+```
+N8N_RUNNERS_HEARTBEAT_INTERVAL=60
+```
+Isso aumenta o intervalo de heartbeat para 60s. Para scripts muito longos (bootstrap com centenas de tasks), use 120.
+
+**Regra geral para `execSync` em Code nodes**:
+- Syncs delta regulares (5min): sem problema, terminam em < 10s
+- Bootstrap / full sync: configurar `N8N_RUNNERS_HEARTBEAT_INTERVAL=120` no Dokploy
+
 ---
 
 ## Variáveis de ambiente disponíveis no container
