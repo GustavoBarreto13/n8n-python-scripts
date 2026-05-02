@@ -580,9 +580,11 @@ class NotionClient:
         if self.dry_run:
             log.debug(f"[DRY] Notion append {len(children)} blocks to {page_id}")
             return {"results": []}
+        # Notion Blocks API rejects POST with hyphens in the page ID.
+        clean_id = page_id.replace("-", "")
         resp = http_request(
             "POST",
-            f"{self.BASE}/blocks/{page_id}/children",
+            f"{self.BASE}/blocks/{clean_id}/children",
             headers=self.headers,
             json_body={"children": children},
         )
@@ -698,7 +700,7 @@ def ticktick_items_to_notion_blocks(items: list[dict]) -> list[dict]:
         title = (item.get("title") or "").strip()
         if not title:
             continue
-        checked = int(item.get("status", 0)) == 2
+        checked = int(item.get("status", 0)) in (1, 2)
         blocks.append({
             "object": "block",
             "type": "to_do",
