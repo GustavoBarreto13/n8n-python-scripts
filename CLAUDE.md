@@ -1,14 +1,15 @@
 # CLAUDE.md — n8n Python Scripts
 
 Guia de contexto para o Claude Code trabalhar neste repositório.
+Atualize este documento com qualquer informação relevante.
 
 ---
 
 ## O que é este repo
 
 Scripts Python chamados pelo n8n via `execSync` em Code nodes. Cada script é um módulo independente que executa uma tarefa específica e retorna JSON via stdout.
-Atualize este documento com qualquer informação relevante.
-O n8n não executa os scripts diretamente como subprocesso — ele usa o node `child_process` do Node.js pra chamar o Python.
+
+O n8n não executa os scripts diretamente como subprocesso — ele usa o `child_process` do Node.js pra chamar o Python.
 
 ---
 
@@ -28,85 +29,13 @@ O n8n não executa os scripts diretamente como subprocesso — ele usa o node `c
 ### Volume (Bind Mount)
 | Host | Container |
 |---|---|
-| `/opt/n8n-scripts` | `/home/node/scripts` |
+| `/opt/n8n-python-scripts` | `/home/node/scripts` |
 | `/root/.ssh` | `/home/node/.ssh` |
 
 Os scripts ficam no host em `/opt/n8n-scripts` e são montados no container em `/home/node/scripts`. Editar no host = reflete imediatamente no container, sem rebuild.
 
 ### Sync automático
 Push no GitHub → webhook → n8n workflow `GitHub Scripts Sync` (ID: `GOl6dewkyrftw9yU`) → `git reset --hard HEAD && git pull` em `/home/node/scripts`.
-
----
-
-## Como o n8n chama os scripts
-
-Em Code nodes do n8n, o padrão usado é:
-
-```javascript
-const { execSync } = require('child_process');
-
-const result = execSync(
-  '/opt/venv/bin/python3 /home/node/scripts/nome_do_script/main.py',
-  { encoding: 'utf8', timeout: 60000 }
-);
-
-const data = JSON.parse(result);
-return [{ json: data }];
-```
-
-**Importante**: o script Python deve sempre retornar JSON válido via `print()` no stdout. Erros devem ser capturados e retornados como JSON também.
-
-### Scripts de longa duração (> 30s)
-
-O n8n task runner aborta tasks que ficam mais de 30s sem heartbeat com:
-> `Task execution aborted because runner became unresponsive`
-
-**Solução**: adicionar no Dokploy (env vars do container):
-```
-N8N_RUNNERS_HEARTBEAT_INTERVAL=60
-```
-Isso aumenta o intervalo de heartbeat para 60s. Para scripts muito longos (bootstrap com centenas de tasks), use 120.
-
-**Regra geral para `execSync` em Code nodes**:
-- Syncs delta regulares (5min): sem problema, terminam em < 10s
-- Bootstrap / full sync: configurar `N8N_RUNNERS_HEARTBEAT_INTERVAL=120` no Dokploy
-
----
-
-## Variáveis de ambiente disponíveis no container
-
-As env vars do n8n estão disponíveis nos scripts Python via `os.environ`:
-
-```python
-import os
-
-# Configuradas no Dockerfile / Dokploy
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN")        # via OPENAPI_MCP_HEADERS
-N8N_HOST     = os.environ.get("N8N_HOST")            # n8n.gusstavo42-vps.cloud
-```
-
-Credenciais de APIs externas (MAL, AniList, TMDB, etc.) devem ser passadas como argumentos pelo n8n ou lidas de env vars configuradas no Dokploy.
-
----
-
-## Estrutura de pastas
-
-```
-n8n-python-scripts/
-├── CLAUDE.md                  ← este arquivo
-├── requirements.txt           ← libs Python compartilhadas (requests)
-├── anime_sync/
-│   ├── main.py                ← entry point + toda a lógica (Jikan, AniList, TMDB, Notion)
-│   └── CLAUDE.md
-├── mal_sync/
-│   ├── main.py                ← MAL animelist → Notion (delta sync por updated_at)
-│   ├── CLAUDE.md
-│   └── .last_sync.json        ← runtime, gitignored (state + tokens MAL rotacionados)
-└── lucy_digest/               ← futuro
-    └── main.py
-```
-
-Cada script fica numa subpasta própria com seu `main.py` como entry point.
 
 ---
 
@@ -133,6 +62,42 @@ Libs instaladas manualmente não sobrevivem ao redeploy — colocar no `Dockerfi
 
 ---
 
+## Como o n8n chama os scripts
+
+Em Code nodes do n8n, o padrão usado é:
+
+```javascript
+const { execSync } = require('child_process');
+
+const result = execSync(
+  '/opt/venv/bin/python3 /home/node/scripts/nome_do_script/main.py',
+  { encoding: 'utf8', timeout: 60000 }
+);
+
+const data = JSON.parse(result);
+return [{ json: data }];
+```
+
+O script Python deve sempre retornar JSON válido via `print()` no stdout. Erros devem ser capturados e retornados como JSON também.
+
+### Scripts de longa duração (> 30s)
+
+O n8n task runner aborta tasks que ficam mais de 30s sem heartbeat com:
+> `Task execution aborted because runner became unresponsive`
+
+**Solução**: adicionar no Dokploy (env vars do container):
+```
+N8N_RUNNERS_HEARTBEAT_INTERVAL=60
+```
+
+Para scripts muito longos (bootstrap com centenas de tasks), use 120.
+
+**Regra geral**:
+- Syncs delta regulares (~5min): terminam em < 10s, sem problema
+- Bootstrap / full sync: configurar `N8N_RUNNERS_HEARTBEAT_INTERVAL=120` no Dokploy
+
+---
+
 ## Padrão de retorno dos scripts
 
 Todo script deve retornar JSON no stdout:
@@ -153,47 +118,49 @@ if __name__ == "__main__":
     main()
 ```
 
----
-
-## anime_sync — Contexto
-
-Sincroniza animes do MAL/AniList com uma database no Notion.
-
-### APIs utilizadas
-| API | Base URL | Auth |
-|---|---|---|
-| Jikan (MAL) | `https://api.jikan.moe/v4` | Nenhuma |
-| AniList | `https://graphql.anilist.co` | Nenhuma |
-| TMDB | `https://api.themoviedb.org/3` | Bearer token |
-| Notion | `https://api.notion.com/v1` | Bearer token |
-
-### Rate limits
-- **Jikan**: 3 req/s, 60 req/min
-- **AniList**: 90 req/min
-- **TMDB**: 50 req/s (na prática ilimitado)
-- **Notion**: 3 req/s
-
-### Notion Database
-- **ID**: `22ef090e-a3ca-8047-a25d-c116c21ef2d8`
-- Contém: título, capa, sinopse, score, status, temporada, episódios, gêneros, etc.
-
-### Lógica principal
-1. Busca lista de animes do MAL via Jikan
-2. Enriquece com dados do AniList (score, popularidade)
-3. Busca poster/backdrop no TMDB com detecção dinâmica de temporada
-4. Upsert no Notion (cria ou atualiza baseado no MAL ID)
-
-### Blacklist
-Alguns MAL IDs problemáticos ficam em `BLACKLIST_MAL_IDS` no `main.py`. Adicionar IDs que causam erro ou dados incorretos.
-
-### TODOs abertos
-- [ ] Multi-season edge cases (animes com 3+ temporadas no TMDB)
-- [ ] OAuth token refresh automático
-- [ ] Paginação para listas grandes (>300 animes)
+Logs de debug devem ir para stderr: `print("debug", file=sys.stderr)`
 
 ---
 
-## Workflow n8n relacionados
+## Variáveis de ambiente disponíveis no container
+
+```python
+import os
+
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN")        # via OPENAPI_MCP_HEADERS
+N8N_HOST     = os.environ.get("N8N_HOST")            # n8n.gusstavo42-vps.cloud
+```
+
+Credenciais de APIs externas devem ser passadas como argumentos pelo n8n ou lidas de env vars configuradas no Dokploy.
+
+---
+
+## Estrutura de pastas
+
+```
+n8n-python-scripts/
+├── CLAUDE.md                        ← este arquivo
+├── requirements.txt                 ← libs Python compartilhadas
+├── anime_sync/
+│   ├── main.py
+│   └── CLAUDE.md                    ← contexto específico do anime_sync
+├── mal_sync/
+│   ├── main.py
+│   ├── CLAUDE.md                    ← contexto específico do mal_sync
+│   └── .last_sync.json              ← runtime, gitignored
+├── ticktick_notion_sync/
+│   ├── main.py
+│   ├── get_token.py
+│   ├── CLAUDE.md                    ← contexto específico do ticktick_notion_sync
+│   ├── .last_sync.json              ← runtime, gitignored
+│   └── .sync_cache.json             ← runtime, gitignored
+└── lucy_digest/                     ← futuro
+    └── main.py
+```
+
+---
+
+## Workflows n8n relacionados
 
 | Workflow | ID | Descrição |
 |---|---|---|
@@ -201,41 +168,30 @@ Alguns MAL IDs problemáticos ficam em `BLACKLIST_MAL_IDS` no `main.py`. Adicion
 | MAL Sync | `RA5ojUMIbU7Kma6M` | Trigger do mal_sync (Schedule → Code node) |
 | GitHub Scripts Sync | `GOl6dewkyrftw9yU` | Webhook do GitHub → git pull |
 | N8N Agent AI | `sepWZYkldB2KcJQSbEQ-V` | Agente principal com MCP |
-
----
-
-## Como testar localmente (dentro do container)
-
-```bash
-# Acessar o container
-docker exec -it <container_id> bash
-
-# Rodar um script manualmente
-/opt/venv/bin/python3 /home/node/scripts/anime_sync/main.py
-
-# Ver output formatado
-/opt/venv/bin/python3 /home/node/scripts/anime_sync/main.py | python3 -m json.tool
-```
+| TickTick↔Notion Sync | `FoPcj3MGlsL6FVB5` | Projeto com os 3 workflows de sync |
 
 ---
 
 ## Deploy de mudanças
 
 ```bash
-# 1. Edita localmente
-code anime_sync/main.py
-
-# 2. Commita e sobe
 git add .
 git commit -m "fix: descrição da mudança"
 git push
-
-# 3. Webhook dispara automaticamente
-# n8n roda git pull em /home/node/scripts
-# Próxima execução do workflow já usa a versão nova
+# webhook dispara automaticamente → git pull no VPS
+# próxima execução do workflow já usa a versão nova
 ```
 
 Zero rebuild. Zero redeploy. Zero downtime.
+
+---
+
+## Como testar localmente (dentro do container)
+
+```bash
+docker exec -it <container_id> bash
+/opt/venv/bin/python3 /home/node/scripts/anime_sync/main.py | python3 -m json.tool
+```
 
 ---
 
@@ -250,12 +206,10 @@ Zero rebuild. Zero redeploy. Zero downtime.
 
 **`Permission denied` ao rodar o script**
 - `chmod +x /home/node/scripts/nome/main.py`
-- Ou checar `chown -R 1000:1000 /opt/n8n-scripts` no host
+- Ou `chown -R 1000:1000 /opt/n8n-scripts` no host
 
 **JSON inválido retornado pro n8n**
-- O script está imprimindo algo além do JSON (print de debug, warnings, etc.)
-- Redirecionar logs para stderr: `print("debug", file=sys.stderr)`
+- O script está imprimindo algo além do JSON — redirecionar logs para stderr.
 
 **Timeout no execSync**
-- O timeout padrão nos Code nodes é 30s. Aumentar para scripts lentos:
-  `execSync('...', { encoding: 'utf8', timeout: 120000 })`
+- Aumentar: `execSync('...', { encoding: 'utf8', timeout: 120000 })`

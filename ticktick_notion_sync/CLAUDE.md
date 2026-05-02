@@ -1,6 +1,6 @@
 # CLAUDE.md — ticktick_notion_sync
 
-Contexto específico do script `ticktick_notion_sync`. Leia também o `CLAUDE.md` na raiz do repo para infraestrutura.
+Contexto específico do script `ticktick_notion_sync`. Veja o `CLAUDE.md` na raiz para infra, padrões de retorno e deploy.
 
 ---
 

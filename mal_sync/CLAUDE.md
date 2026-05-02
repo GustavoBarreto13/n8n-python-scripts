@@ -1,6 +1,6 @@
 # CLAUDE.md — mal_sync
 
-Contexto específico do script `mal_sync`. Leia também o `CLAUDE.md` na raiz do repo para infraestrutura.
+Contexto específico do script `mal_sync`. Veja o `CLAUDE.md` na raiz para infra, padrões de retorno e deploy.
 
 ---
 

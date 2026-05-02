@@ -1,6 +1,6 @@
 # CLAUDE.md — anime_sync
 
-Contexto específico do script `anime_sync`. Leia também o `CLAUDE.md` na raiz do repo para contexto de infraestrutura.
+Contexto específico do script `anime_sync`. Veja o `CLAUDE.md` na raiz para infra, padrões de retorno e deploy.
 
 ---
 
@@ -108,17 +108,16 @@ MAL IDs em `BLACKLIST_MAL_IDS` (linha ~61 do `main.py`) só atualizam metadados 
 
 ## Code node n8n
 
+Timeout de 120s — cada anime leva ~5-10s por causa dos rate limits.
+
 ```javascript
 const { execSync } = require('child_process');
 const result = execSync(
   '/opt/venv/bin/python3 /home/node/scripts/anime_sync/main.py',
   { encoding: 'utf8', timeout: 120000 }
 );
-const data = JSON.parse(result);
-return [{ json: data }];
+return [{ json: JSON.parse(result) }];
 ```
-
-Timeout de 120s recomendado (cada anime leva ~5-10s por causa dos rate limits).
 
 ---
 
