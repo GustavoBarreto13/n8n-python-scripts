@@ -352,24 +352,48 @@ class NotionClient:
         }
         self.dry_run = dry_run
 
-    def find_page_by_mal_id(self, mal_id: str) -> Optional[str]:
-        """Retorna o page_id do anime com este MAL_ID (Type=Season), ou None."""
+    def batch_find_pages_by_mal_ids(self, mal_ids: list[str]) -> dict[str, str]:
+        """
+        Busca múltiplos MAL_IDs em uma única query Notion usando OR filter.
+        Retorna dict {mal_id -> page_id} para os que existirem.
+        """
+        if not mal_ids:
+            return {}
+
         url = f"{self.BASE}/databases/{NOTION_DB_ANIMES}/query"
-        body = {
-            "filter": {
-                "and": [
-                    {"property": "MAL_ID", "rich_text": {"equals": mal_id}},
-                    {"property": "Type", "select": {"equals": "Season"}},
-                ]
-            },
-            "page_size": 1,
-        }
-        resp = http_request("POST", url, headers=self.headers, json_body=body)
-        time.sleep(NOTION_DELAY)
-        if not resp:
-            return None
-        results = resp.get("results", [])
-        return results[0]["id"] if results else None
+        # Notion aceita até 100 condições num OR filter
+        chunk_size = 100
+        result: dict[str, str] = {}
+
+        for i in range(0, len(mal_ids), chunk_size):
+            chunk = mal_ids[i:i + chunk_size]
+            or_conditions = [
+                {
+                    "and": [
+                        {"property": "MAL_ID", "rich_text": {"equals": mid}},
+                        {"property": "Type", "select": {"equals": "Season"}},
+                    ]
+                }
+                for mid in chunk
+            ]
+            body: dict = {
+                "filter": {"or": or_conditions} if len(or_conditions) > 1 else or_conditions[0],
+                "page_size": len(chunk),
+            }
+            resp = http_request("POST", url, headers=self.headers, json_body=body)
+            time.sleep(NOTION_DELAY)
+            if not resp:
+                continue
+            for page in resp.get("results", []):
+                props = page.get("properties", {})
+                mal_id_prop = props.get("MAL_ID", {})
+                rich_texts = mal_id_prop.get("rich_text", [])
+                if rich_texts:
+                    mid = rich_texts[0].get("plain_text", "")
+                    if mid:
+                        result[mid] = page["id"]
+
+        return result
 
     def update_anime(self, page_id: str, mal_status: str, episodes_watched: int, score: Optional[int]) -> bool:
         if self.dry_run:
@@ -433,6 +457,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--full", action="store_true", help="Ignora last_sync_time e processa todas as entradas")
     parser.add_argument("--dry-run", action="store_true", help="Não escreve no Notion")
+    parser.add_argument("--limit", type=int, default=0, help="Processa no máximo N entries por run (0 = sem limite)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -461,6 +486,9 @@ def main() -> int:
 
     try:
         mal_entries = fetch_mal_list(auth, last_sync, args.full)
+        if args.limit and len(mal_entries) > args.limit:
+            log.info(f"--limit {args.limit}: truncando {len(mal_entries)} → {args.limit} entries")
+            mal_entries = mal_entries[:args.limit]
     except RuntimeError as e:
         log.error(str(e))
         print(json.dumps({"ok": False, "error": str(e)}))
@@ -490,13 +518,18 @@ def main() -> int:
 
     created_page_ids: list[str] = []
 
+    # Batch lookup: uma query Notion pra todos os MAL_IDs de uma vez
+    all_mal_ids = [e["mal_id"] for e in mal_entries]
+    existing_pages = notion.batch_find_pages_by_mal_ids(all_mal_ids)
+    log.info(f"Notion batch lookup: {len(existing_pages)} existentes de {len(all_mal_ids)} entries")
+
     for entry in mal_entries:
         mal_id = entry["mal_id"]
         title = entry["title"]
         score = entry["score"] if entry["score"] > 0 else None
 
         try:
-            page_id = notion.find_page_by_mal_id(mal_id)
+            page_id = existing_pages.get(mal_id)
             if page_id:
                 ok = notion.update_anime(
                     page_id,
