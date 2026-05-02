@@ -164,6 +164,7 @@ A Data Table `aXp1FwU02oMI52Pr` que existia no n8n não é mais usada — pode s
 | `tags[]` | ↔ | `Labels` (multi_select) | Notion auto-cria opções faltantes |
 | `priority` | ↔ | `Priority` (select) | Ver tabela abaixo |
 | `dueDate` | ↔ | `Due` (date) | ISO 8601 |
+| `isAllDay` | ↔ | (controla formato do `Due`) | TT `isAllDay=true` → Notion grava date-only (sem hora). Notion date-only → TT recebe `isAllDay=true` + `T00:00:00+0000` |
 | `content` / `desc` | ↔ | `Description` (rich_text) | Truncado em 2000 chars |
 | `items[]` | ↔ | to-do blocks (page body) | `status` 0/1/2 ↔ `checked`; sortOrder ↔ índice × 1000 |
 | `status=2` | TT→N | `Status="Done"` + `Completed=hoje` | Task desaparece do scan; detectada via GET individual |
@@ -338,7 +339,7 @@ return [{ json: JSON.parse(result.trim().split('\n').pop()) }];
 3. **Recurring tasks**: configuração não sincroniza. Cada ocorrência individual sincroniza como task normal.
 4. **Labels novas**: o Notion auto-cria opções no `Labels` quando recebe um nome novo (multi_select). TickTick também aceita tags novas no payload.
 5. **Notion `Tags` relation é limit:1** — sempre uma única relação. Se a página tiver mais de uma, só a primeira é considerada no reverse lookup.
-6. **Timezone**: TickTick manda dueDate UTC com offset (`+0000`). Notion aceita o ISO direto. `Completed` é só data — usamos o dia atual em BRT (UTC-3).
+6. **Timezone / all-day**: TickTick manda dueDate UTC com offset (`+0000`). Notion aceita o ISO direto. Para tasks all-day (`isAllDay=true`), o TickTick devolve `dueDate` como `T09:00:00+0000` (= 06:00 BRT) — o sync detecta o flag e grava no Notion como date-only (sem hora). No reverso, Notion date-only vira `isAllDay=true` no TickTick. `Completed` é só data — usamos o dia atual em BRT (UTC-3).
 7. **Status no Notion**: tipo `status` (não `select`) — payload usa `{"status": {"name": "Done"}}`, não `{"select": ...}`.
 8. **Checklist — to_do blocks vs. outros blocos**: só blocos `type == "to_do"` são gerenciados pelo sync. Parágrafos, imagens e outros tipos no corpo da página nunca são tocados.
 9. **Checklist vazio (TT→Notion)**: se `items[]` ficar vazio no TickTick, o próximo sync TT→Notion deleta todos os to_do blocks da página Notion. Por design — checklist fica em sync nos dois lados.

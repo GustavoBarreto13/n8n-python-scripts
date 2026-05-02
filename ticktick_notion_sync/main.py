@@ -669,25 +669,27 @@ def normalize_id(s: str) -> str:
     return (s or "").replace("-", "").lower()
 
 
-def ticktick_due_to_notion_date(due: Optional[str]) -> Optional[dict]:
+def ticktick_due_to_notion_date(due: Optional[str], is_all_day: bool = False) -> Optional[dict]:
     """TickTick manda dueDate ISO 8601 com offset (ex: 2026-04-23T09:00:00.000+0000).
-    Notion aceita o mesmo formato. Se for null, devolve None pra limpar o campo."""
+    Se isAllDay=true, manda só a data pro Notion (sem hora). Caso contrário, repassa o ISO."""
     if not due:
         return None
+    if is_all_day:
+        return {"start": due[:10]}
     return {"start": due}
 
 
-def notion_due_to_ticktick(date_prop: Optional[dict]) -> Optional[str]:
+def notion_due_to_ticktick(date_prop: Optional[dict]) -> tuple[Optional[str], bool]:
+    """Retorna (dueDate ISO, is_all_day). Notion date-only → all-day no TickTick."""
     if not date_prop:
-        return None
+        return None, False
     d = date_prop.get("date")
     if not d or not d.get("start"):
-        return None
+        return None, False
     start = d["start"]
-    # Notion pode mandar "2026-04-23" (sem hora). TickTick aceita ISO completo.
     if "T" not in start:
-        return f"{start}T09:00:00+0000"
-    return start
+        return f"{start}T00:00:00+0000", True
+    return start, False
 
 
 def ticktick_items_to_notion_blocks(items: list[dict]) -> list[dict]:
@@ -775,6 +777,7 @@ def ticktick_to_notion_props(task: dict, project_id: str) -> dict:
     status = int(task.get("status") or 0)
     tags = task.get("tags") or []
     due = task.get("dueDate")
+    is_all_day = bool(task.get("isAllDay"))
 
     props: dict = {
         PROP_NAME: {"title": [{"text": {"content": title[:2000]}}]},
@@ -788,7 +791,7 @@ def ticktick_to_notion_props(task: dict, project_id: str) -> dict:
         props[PROP_DESCRIPTION] = {"rich_text": [{"text": {"content": content[:2000]}}]}
 
     if due:
-        props[PROP_DUE] = {"date": ticktick_due_to_notion_date(due)}
+        props[PROP_DUE] = {"date": ticktick_due_to_notion_date(due, is_all_day)}
 
     tag_id = PROJECT_TAG_MAP.get(project_id)
     if tag_id:
@@ -814,7 +817,7 @@ def notion_to_ticktick_payload(page: dict) -> dict:
     title = _extract_title_text(props.get(PROP_NAME))
     description = _extract_rich_text(props.get(PROP_DESCRIPTION))
     priority_name = _extract_select_name(props.get(PROP_PRIORITY))
-    due = notion_due_to_ticktick(props.get(PROP_DUE))
+    due, is_all_day = notion_due_to_ticktick(props.get(PROP_DUE))
     labels = _extract_multi_select(props.get(PROP_LABELS))
 
     payload: dict = {
@@ -825,6 +828,8 @@ def notion_to_ticktick_payload(page: dict) -> dict:
         payload["content"] = description
     if due:
         payload["dueDate"] = due
+        if is_all_day:
+            payload["isAllDay"] = True
     if labels:
         payload["tags"] = labels
 
