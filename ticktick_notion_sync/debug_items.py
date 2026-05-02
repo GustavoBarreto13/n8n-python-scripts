@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Debug: mostra todas as tasks do TickTick que têm items[] (checklist)."""
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -13,12 +12,7 @@ _load_dotenv()
 state_file = Path(__file__).parent / ".last_sync.json"
 state = json.loads(state_file.read_text())
 
-auth = TickTickAuth(
-    client_id=os.environ["TICKTICK_CLIENT_ID"],
-    client_secret=os.environ["TICKTICK_CLIENT_SECRET"],
-    state=state,
-    state_file=state_file,
-)
+auth = TickTickAuth(state=state)
 tt = TickTickClient(auth)
 
 projects = tt.list_projects()
