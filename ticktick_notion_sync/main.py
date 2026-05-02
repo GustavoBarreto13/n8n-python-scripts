@@ -545,6 +545,50 @@ class NotionClient:
         time.sleep(NOTION_DELAY)
         return resp
 
+    def get_page_blocks(self, page_id: str) -> list[dict]:
+        """GET /blocks/{page_id}/children — cursor-paged, returns all block objects."""
+        url = f"{self.BASE}/blocks/{page_id}/children"
+        results: list[dict] = []
+        cursor: Optional[str] = None
+        while True:
+            params: dict = {"page_size": 100}
+            if cursor:
+                params["start_cursor"] = cursor
+            resp = http_request("GET", url, headers=self.headers, params=params)
+            time.sleep(NOTION_DELAY)
+            if not resp:
+                break
+            results.extend(resp.get("results", []))
+            if not resp.get("has_more"):
+                break
+            cursor = resp.get("next_cursor")
+            if not cursor:
+                break
+        return results
+
+    def delete_block(self, block_id: str) -> bool:
+        """DELETE /blocks/{block_id}. Returns True on success."""
+        if self.dry_run:
+            log.debug(f"[DRY] Notion delete block {block_id}")
+            return True
+        resp = http_request("DELETE", f"{self.BASE}/blocks/{block_id}", headers=self.headers)
+        time.sleep(NOTION_DELAY)
+        return resp is not None
+
+    def append_blocks(self, page_id: str, children: list[dict]) -> Optional[dict]:
+        """POST /blocks/{page_id}/children — appends block objects to the page body."""
+        if self.dry_run:
+            log.debug(f"[DRY] Notion append {len(children)} blocks to {page_id}")
+            return {"results": []}
+        resp = http_request(
+            "POST",
+            f"{self.BASE}/blocks/{page_id}/children",
+            headers=self.headers,
+            json_body={"children": children},
+        )
+        time.sleep(NOTION_DELAY)
+        return resp
+
 
 # ============================================================
 # FIELD TRANSFORMATIONS
@@ -644,6 +688,83 @@ def notion_due_to_ticktick(date_prop: Optional[dict]) -> Optional[str]:
     if "T" not in start:
         return f"{start}T09:00:00+0000"
     return start
+
+
+def ticktick_items_to_notion_blocks(items: list[dict]) -> list[dict]:
+    """Converts TickTick checklist items[] to Notion to_do block dicts, sorted by sortOrder."""
+    sorted_items = sorted(items, key=lambda x: x.get("sortOrder", 0))
+    blocks = []
+    for item in sorted_items:
+        title = (item.get("title") or "").strip()
+        if not title:
+            continue
+        checked = int(item.get("status", 0)) == 2
+        blocks.append({
+            "object": "block",
+            "type": "to_do",
+            "to_do": {
+                "rich_text": [{"type": "text", "text": {"content": title[:2000]}}],
+                "checked": checked,
+            },
+        })
+    return blocks
+
+
+def extract_todo_blocks(blocks: list[dict]) -> list[dict]:
+    """Filters a raw Notion block list to only to_do typed blocks."""
+    return [b for b in blocks if b.get("type") == "to_do"]
+
+
+def notion_blocks_to_ticktick_items(todo_blocks: list[dict]) -> list[dict]:
+    """Converts Notion to_do blocks to TickTick items[] payload dicts."""
+    items = []
+    for i, block in enumerate(todo_blocks):
+        td = block.get("to_do") or {}
+        rich_text = td.get("rich_text") or []
+        title = "".join(rt.get("plain_text", "") for rt in rich_text).strip()
+        if not title:
+            continue
+        checked = bool(td.get("checked", False))
+        items.append({
+            "id": block.get("id", f"notion-{i}"),
+            "title": title,
+            "status": 2 if checked else 0,
+            "sortOrder": i * 1000,
+        })
+    return items
+
+
+def sync_checklist_tt_to_notion(
+    notion: "NotionClient",
+    page_id: str,
+    items: list[dict],
+    dry_run: bool,
+) -> bool:
+    """
+    Replaces all to_do blocks on a Notion page with blocks built from TickTick items[].
+    Strategy: fetch existing → delete to_do blocks → append new ones.
+    Non-to_do blocks are left untouched. Returns True on full success.
+    """
+    existing = notion.get_page_blocks(page_id)
+    todo_existing = extract_todo_blocks(existing)
+
+    for block in todo_existing:
+        bid = block.get("id")
+        if bid and not notion.delete_block(bid):
+            log.warning(f"Failed to delete block {bid} on page {page_id}")
+
+    if not items:
+        return True
+
+    new_blocks = ticktick_items_to_notion_blocks(items)
+    if not new_blocks:
+        return True
+
+    resp = notion.append_blocks(page_id, new_blocks)
+    if resp is None:
+        log.error(f"append_blocks failed for page {page_id}")
+        return False
+    return True
 
 
 def ticktick_to_notion_props(task: dict, project_id: str) -> dict:
@@ -868,6 +989,9 @@ def run_tt_to_notion(
                             ticktick_modified=modified,
                             notion_modified=result.get("last_edited_time"),
                         )
+                        items = task.get("items") or []
+                        if not sync_checklist_tt_to_notion(notion, page_id, items, notion.dry_run):
+                            errors.append(f"checklist_failed {ttid}")
                     else:
                         err = get_last_http_error() or "unknown"
                         errors.append(f"update_failed {ttid}: {err}")
@@ -884,6 +1008,11 @@ def run_tt_to_notion(
                             ticktick_modified=modified,
                             notion_modified=result.get("last_edited_time"),
                         )
+                        items = task.get("items") or []
+                        if items:
+                            new_blocks = ticktick_items_to_notion_blocks(items)
+                            if new_blocks and notion.append_blocks(result["id"], new_blocks) is None:
+                                errors.append(f"checklist_create_failed {ttid}")
                     else:
                         err = get_last_http_error() or "unknown"
                         errors.append(f"create_failed {ttid}: {err}")
@@ -943,6 +1072,11 @@ def run_notion_to_tt(
                 if tt_project:
                     payload["projectId"] = tt_project
 
+                blocks = notion.get_page_blocks(page_id)
+                todo_blocks = extract_todo_blocks(blocks)
+                if todo_blocks:
+                    payload["items"] = notion_blocks_to_ticktick_items(todo_blocks)
+
                 result = tt.update_task(ttid, payload)
                 if result:
                     updated += 1
@@ -970,6 +1104,12 @@ def run_notion_to_tt(
                 project = resolve_ticktick_project_for_notion_page(page)
                 if project != "inbox":
                     payload["projectId"] = project
+
+                blocks = notion.get_page_blocks(page_id)
+                todo_blocks = extract_todo_blocks(blocks)
+                if todo_blocks:
+                    payload["items"] = notion_blocks_to_ticktick_items(todo_blocks)
+
                 result = tt.create_task(payload)
                 if not result or not result.get("id"):
                     err = get_last_http_error() or "unknown"

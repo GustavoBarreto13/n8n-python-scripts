@@ -154,6 +154,7 @@ A Data Table `aXp1FwU02oMI52Pr` que existia no n8n não é mais usada — pode s
 | `priority` | ↔ | `Priority` (select) | Ver tabela abaixo |
 | `dueDate` | ↔ | `Due` (date) | ISO 8601 |
 | `content` / `desc` | ↔ | `Description` (rich_text) | Truncado em 2000 chars |
+| `items[]` | ↔ | to-do blocks (page body) | `status` 0/2 ↔ `checked`; sortOrder ↔ índice × 1000 |
 | `status=2` | TT→N | `Status="Done"` + `Completed=hoje` | |
 | `status=0` | TT→N | (preserva valor existente) | No update; em create vira `To Do` |
 
@@ -318,12 +319,15 @@ return [{ json: JSON.parse(result.trim().split('\n').pop()) }];
 ## Edge cases
 
 1. **Delete não propaga.** Task deletada num lado fica órfã no outro. Limpar manualmente.
-2. **Subtasks** (checklist do TickTick): não viram sub-pages no Notion. Ficam no `content`.
+2. **Subtasks** (checklist do TickTick): sincronizados como to-do blocks no corpo da página Notion (bidirecional). Subtasks com `parentId` (hierarquia real) não são suportados — só os `items[]` de checklist flat.
 3. **Recurring tasks**: configuração não sincroniza. Cada ocorrência individual sincroniza como task normal.
 4. **Labels novas**: o Notion auto-cria opções no `Labels` quando recebe um nome novo (multi_select). TickTick também aceita tags novas no payload.
 5. **Notion `Tags` relation é limit:1** — sempre uma única relação. Se a página tiver mais de uma, só a primeira é considerada no reverse lookup.
 6. **Timezone**: TickTick manda dueDate UTC com offset (`+0000`). Notion aceita o ISO direto. `Completed` é só data — usamos o dia atual em BRT (UTC-3).
 7. **Status no Notion**: tipo `status` (não `select`) — payload usa `{"status": {"name": "Done"}}`, não `{"select": ...}`.
+8. **Checklist — to_do blocks vs. outros blocos**: só blocos `type == "to_do"` são gerenciados pelo sync. Parágrafos, imagens e outros tipos no corpo da página nunca são tocados.
+9. **Checklist vazio (TT→Notion)**: se `items[]` ficar vazio no TickTick, o próximo sync TT→Notion deleta todos os to_do blocks da página Notion. Por design — checklist fica em sync nos dois lados.
+10. **Notion→TT sem blocos**: se a página Notion não tiver to_do blocks, a chave `items` é omitida do payload do TickTick — o checklist existente no TT é preservado. Para limpar o checklist via Notion, delete os to_do blocks manualmente.
 
 ---
 
@@ -331,6 +335,6 @@ return [{ json: JSON.parse(result.trim().split('\n').pop()) }];
 
 - [ ] Paginação no TickTick `/project/{id}/data` (a API não documenta, monitorar projetos com >100 tasks)
 - [ ] Detectar deletes (task removida) — hoje fica órfã
-- [ ] Sync do conteúdo de subtasks do TickTick
+- [x] Sync do conteúdo de subtasks do TickTick — implementado como to_do blocks (items[] flat)
 - [ ] Recurring task config sync (provavelmente não factível direto)
 - [ ] Notion `Project` relation: hoje não sincroniza com nada do TickTick
