@@ -1081,11 +1081,15 @@ def run_notion_to_tt(
                 if result:
                     updated += 1
                     log.info(f"  ✓ TT update: {title!r}")
+                    # GET confirma o modifiedTime real que o /project/{id}/data vai retornar.
+                    # update_task pode retornar modifiedTime ligeiramente diferente (ou None).
+                    confirmed = tt.get_task(tt_project or result.get("projectId", ""), ttid) if tt_project or result.get("projectId") else None
+                    tt_modified = (confirmed or result).get("modifiedTime")
                     update_cache_entry(
                         cache,
                         ttid,
                         last_synced_by="notion",
-                        ticktick_modified=result.get("modifiedTime"),
+                        ticktick_modified=tt_modified,
                         notion_modified=notion_modified,
                     )
                 else:
@@ -1126,11 +1130,12 @@ def run_notion_to_tt(
                     PROP_TICKTICK_PROJECT_ID: {"rich_text": [{"text": {"content": new_project}}]},
                 }
                 upd = notion.update_page(page_id, back_props)
+                confirmed_create = tt.get_task(new_project, new_ttid)
                 update_cache_entry(
                     cache,
                     new_ttid,
                     last_synced_by="notion",
-                    ticktick_modified=result.get("modifiedTime"),
+                    ticktick_modified=(confirmed_create or result).get("modifiedTime"),
                     notion_modified=(upd or {}).get("last_edited_time", notion_modified),
                 )
 
