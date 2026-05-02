@@ -15,7 +15,10 @@
       "mcp__n8n-mcp__tools_documentation",
       "mcp__n8n-mcp__n8n_update_partial_workflow",
       "mcp__claude_ai_Notion__notion-fetch",
-      "mcp__claude_ai_Notion__notion-query-database-view"
+      "mcp__claude_ai_Notion__notion-query-database-view",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\gusta\\\\Documents\\\\GitHub\\\\n8n-python-scripts\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)"
     ]
   }
 }

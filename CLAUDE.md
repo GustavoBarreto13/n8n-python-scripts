@@ -154,6 +154,9 @@ n8n-python-scripts/
 │   ├── CLAUDE.md                    ← contexto específico do ticktick_notion_sync
 │   ├── .last_sync.json              ← runtime, gitignored
 │   └── .sync_cache.json             ← runtime, gitignored
+├── nami_finance_agent/
+│   ├── main.py
+│   └── CLAUDE.md                    ← contexto específico do nami_finance_agent
 └── lucy_digest/                     ← futuro
     └── main.py
 ```
@@ -169,6 +172,7 @@ n8n-python-scripts/
 | GitHub Scripts Sync | `GOl6dewkyrftw9yU` | Webhook do GitHub → git pull |
 | N8N Agent AI | `sepWZYkldB2KcJQSbEQ-V` | Agente principal com MCP |
 | TickTick↔Notion Sync | `FoPcj3MGlsL6FVB5` | Projeto com os 3 workflows de sync |
+| Nami Finance Agent | `UyRklhswVdxJwy22` | Telegram → Gemini → Notion 💰 Transações |
 
 ---
 
