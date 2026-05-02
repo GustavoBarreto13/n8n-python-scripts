@@ -1024,50 +1024,65 @@ def run_tt_to_notion(
                 errors.append(f"{ttid}: {e}")
 
     # Detecta tasks completadas: cache tem ttid mas o scan não retornou
-    # (a API /project/{id}/data omite tasks completas). GET individual confirma.
+    # (a API /project/{id}/data omite tasks completas). Confirmamos com GET individual.
+    # Otimização: só verifica ttids no cache cujo last_synced_by != "ticktick" com modified
+    # mais recente que cache (ou seja, foram vistas ativas antes e sumiram agora).
     missing_ttids = [tid for tid in cache.keys() if tid not in seen_ttids]
     if missing_ttids:
         log.info(f"Verificando {len(missing_ttids)} tasks ausentes do scan (possíveis completed)…")
-    for ttid in missing_ttids:
-        entry = cache.get(ttid) or {}
-        try:
-            page = notion.find_by_ticktick_id(ttid)
+
+        # Busca todas as páginas Notion não-Done com TickTick_ID em uma única query paginada.
+        # Filtra por status != Done para evitar trabalho desnecessário em tasks já completadas.
+        not_done_pages = notion.query_db({
+            "filter": {
+                "and": [
+                    {"property": PROP_TICKTICK_ID, "rich_text": {"is_not_empty": True}},
+                    {"property": PROP_STATUS, "status": {"does_not_equal": NOTION_STATUS_DONE}},
+                ]
+            },
+            "page_size": 100,
+        })
+        ttid_to_page: dict[str, dict] = {}
+        for pg in not_done_pages:
+            tid = _extract_rich_text((pg.get("properties") or {}).get(PROP_TICKTICK_ID))
+            if tid:
+                ttid_to_page[tid] = pg
+
+        for ttid in missing_ttids:
+            page = ttid_to_page.get(ttid)
             if not page:
-                continue
-            current_status = _extract_status_name((page.get("properties") or {}).get(PROP_STATUS))
-            if current_status == NOTION_STATUS_DONE:
-                continue  # já está Done no Notion, nada a fazer
+                continue  # ou já está Done no Notion, ou não existe
+            try:
+                tt_project = _extract_rich_text((page.get("properties") or {}).get(PROP_TICKTICK_PROJECT_ID))
+                if not tt_project:
+                    continue
+                task = tt.get_task(tt_project, ttid)
+                if not task:
+                    continue  # task deletada de fato, não completed
+                if int(task.get("status", 0)) != 2:
+                    continue
 
-            tt_project = _extract_rich_text((page.get("properties") or {}).get(PROP_TICKTICK_PROJECT_ID))
-            if not tt_project:
-                continue
-            task = tt.get_task(tt_project, ttid)
-            if not task:
-                continue  # task deletada de fato, não completed
-            if int(task.get("status", 0)) != 2:
-                continue
-
-            done_props = {
-                PROP_STATUS: {"status": {"name": NOTION_STATUS_DONE}},
-                PROP_COMPLETED: {"date": {"start": _today_brt_date()}},
-            }
-            result = notion.update_page(page["id"], done_props)
-            if result:
-                completed += 1
-                log.info(f"  ✓ Notion complete: {_extract_title_text((page.get('properties') or {}).get(PROP_NAME)) or ttid!r}")
-                update_cache_entry(
-                    cache,
-                    ttid,
-                    last_synced_by="ticktick",
-                    ticktick_modified=task.get("modifiedTime"),
-                    notion_modified=result.get("last_edited_time"),
-                )
-            else:
-                err = get_last_http_error() or "unknown"
-                errors.append(f"complete_failed {ttid}: {err}")
-        except Exception as e:
-            log.exception(f"Erro verificando completed para {ttid}")
-            errors.append(f"complete_check {ttid}: {e}")
+                done_props = {
+                    PROP_STATUS: {"status": {"name": NOTION_STATUS_DONE}},
+                    PROP_COMPLETED: {"date": {"start": _today_brt_date()}},
+                }
+                result = notion.update_page(page["id"], done_props)
+                if result:
+                    completed += 1
+                    log.info(f"  ✓ Notion complete: {_extract_title_text((page.get('properties') or {}).get(PROP_NAME)) or ttid!r}")
+                    update_cache_entry(
+                        cache,
+                        ttid,
+                        last_synced_by="ticktick",
+                        ticktick_modified=task.get("modifiedTime"),
+                        notion_modified=result.get("last_edited_time"),
+                    )
+                else:
+                    err = get_last_http_error() or "unknown"
+                    errors.append(f"complete_failed {ttid}: {err}")
+            except Exception as e:
+                log.exception(f"Erro verificando completed para {ttid}")
+                errors.append(f"complete_check {ttid}: {e}")
 
     return {
         "scanned": scanned,
