@@ -576,15 +576,13 @@ class NotionClient:
         return resp is not None
 
     def append_blocks(self, page_id: str, children: list[dict]) -> Optional[dict]:
-        """POST /blocks/{page_id}/children — appends block objects to the page body."""
+        """PATCH /blocks/{page_id}/children — appends block objects to the page body."""
         if self.dry_run:
             log.debug(f"[DRY] Notion append {len(children)} blocks to {page_id}")
             return {"results": []}
-        # Notion Blocks API rejects POST with hyphens in the page ID.
-        clean_id = page_id.replace("-", "")
         resp = http_request(
-            "POST",
-            f"{self.BASE}/blocks/{clean_id}/children",
+            "PATCH",
+            f"{self.BASE}/blocks/{page_id}/children",
             headers=self.headers,
             json_body={"children": children},
         )
