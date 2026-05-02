@@ -119,11 +119,22 @@ Cache de timestamps por entrada. Se sumir, a próxima rodada apenas re-sincroniz
 |---|---|---|
 | GET | `/project` | Lista projetos |
 | GET | `/project/{id}/data` | Tasks ativas + colunas do projeto |
+| GET | `/project/{id}/task/{tid}` | Task individual (retorna mesmo se completada) |
 | POST | `/task` | Cria task |
 | POST | `/task/{id}` | Atualiza task |
 | POST | `/project/{pid}/task/{tid}/complete` | Completa task |
 
-A API do TickTick **só retorna tasks ativas** (status=0). Tasks completadas não aparecem no `/project/{id}/data`.
+A API do TickTick **só retorna tasks ativas** (status=0) no `/project/{id}/data`. Tasks completadas não aparecem — use `GET /project/{id}/task/{tid}` para buscar individualmente.
+
+### Endpoints Notion relevantes (Blocks API)
+
+| Método | Path | Uso |
+|---|---|---|
+| GET | `/blocks/{page_id}/children` | Lista blocos do corpo da página |
+| PATCH | `/blocks/{page_id}/children` | **Appenda** blocos ao corpo da página (**PATCH**, não POST) |
+| DELETE | `/blocks/{block_id}` | Deleta um bloco |
+
+**Atenção**: a Blocks API usa **PATCH** para append, diferente do resto da API Notion que usa POST. Usar POST retorna `400 invalid_request_url`.
 
 ---
 
@@ -154,8 +165,8 @@ A Data Table `aXp1FwU02oMI52Pr` que existia no n8n não é mais usada — pode s
 | `priority` | ↔ | `Priority` (select) | Ver tabela abaixo |
 | `dueDate` | ↔ | `Due` (date) | ISO 8601 |
 | `content` / `desc` | ↔ | `Description` (rich_text) | Truncado em 2000 chars |
-| `items[]` | ↔ | to-do blocks (page body) | `status` 0/2 ↔ `checked`; sortOrder ↔ índice × 1000 |
-| `status=2` | TT→N | `Status="Done"` + `Completed=hoje` | |
+| `items[]` | ↔ | to-do blocks (page body) | `status` 0/1/2 ↔ `checked`; sortOrder ↔ índice × 1000 |
+| `status=2` | TT→N | `Status="Done"` + `Completed=hoje` | Task desaparece do scan; detectada via GET individual |
 | `status=0` | TT→N | (preserva valor existente) | No update; em create vira `To Do` |
 
 ### Status mapping
@@ -225,6 +236,8 @@ Toda sync passa por `should_skip_sync(cache_entry, direction, source_modified)`:
 
 Sem isso, um update em A → escrita em B → trigger de update em A → loop infinito.
 
+**Após Notion→TT update**: faz um `GET /project/{pid}/task/{tid}` para confirmar o `modifiedTime` real antes de salvar no cache. O `update_task` pode retornar um `modifiedTime` diferente do que o próximo scan vai ver, o que quebraria o check "unchanged".
+
 ---
 
 ## Saída (stdout)
@@ -242,12 +255,14 @@ JSON em uma única linha. Logs vão pro stderr.
   "scanned": 42,
   "created": 3,
   "updated": 5,
+  "completed": 1,
   "skipped": 34,
   "errors": []
 }
 ```
 
-`notion-to-tt` adiciona `completed: <int>` (quantas tasks foram marcadas Done no TT).
+`tt-to-notion` inclui `completed: <int>` (tasks marcadas Done no Notion por terem sumido do scan TT).
+`notion-to-tt` também inclui `completed: <int>` (tasks marcadas Done no TT).
 
 ### `--bootstrap`
 
@@ -328,13 +343,16 @@ return [{ json: JSON.parse(result.trim().split('\n').pop()) }];
 8. **Checklist — to_do blocks vs. outros blocos**: só blocos `type == "to_do"` são gerenciados pelo sync. Parágrafos, imagens e outros tipos no corpo da página nunca são tocados.
 9. **Checklist vazio (TT→Notion)**: se `items[]` ficar vazio no TickTick, o próximo sync TT→Notion deleta todos os to_do blocks da página Notion. Por design — checklist fica em sync nos dois lados.
 10. **Notion→TT sem blocos**: se a página Notion não tiver to_do blocks, a chave `items` é omitida do payload do TickTick — o checklist existente no TT é preservado. Para limpar o checklist via Notion, delete os to_do blocks manualmente.
+11. **TickTick `items[].status`**: valores 0 (unchecked), 1 (completed com timestamp), 2 (checked). O sync trata 1 e 2 como `checked: true` no Notion.
+12. **Completed TT→Notion**: tasks completadas no TickTick somem do `/project/{id}/data`. O sync detecta via "missing from scan" → GET individual → se `status=2`, marca Done no Notion. Custo: 1 query Notion + 1 GET TickTick por task ausente não-Done.
 
 ---
 
 ## TODOs abertos
 
 - [ ] Paginação no TickTick `/project/{id}/data` (a API não documenta, monitorar projetos com >100 tasks)
-- [ ] Detectar deletes (task removida) — hoje fica órfã
+- [ ] Detectar deletes (task removida) — hoje fica órfã (o "missing from scan" faz GET e se não achar, ignora)
 - [x] Sync do conteúdo de subtasks do TickTick — implementado como to_do blocks (items[] flat)
+- [x] Completar task no Notion quando completada no TickTick — detectado via "missing from scan" + GET individual
 - [ ] Recurring task config sync (provavelmente não factível direto)
 - [ ] Notion `Project` relation: hoje não sincroniza com nada do TickTick
