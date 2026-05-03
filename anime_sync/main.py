@@ -620,10 +620,26 @@ class TMDBClient:
     BASE = "https://api.themoviedb.org/3"
 
     def __init__(self, token: str):
-        self.headers = {"Authorization": f"Bearer {token}"}
+        # TMDB has two auth schemes:
+        #   v3 API key (32-char hex)        → passed as ?api_key=...
+        #   v4 Read Access Token (JWT-ish)  → passed as Authorization: Bearer ...
+        # Detect by length (v3 keys are exactly 32 chars; v4 tokens are much longer).
+        token = token.strip()
+        if len(token) == 32:
+            self.headers: dict = {}
+            self._auth_param = {"api_key": token}
+        else:
+            self.headers = {"Authorization": f"Bearer {token}"}
+            self._auth_param = {}
         # In-memory cache so we don't fetch the same show's seasons multiple times
         # within a single run. Key: tmdb_id, value: list of season dicts.
         self._seasons_cache: dict[int, list[dict]] = {}
+
+    def _url(self, path: str) -> str:
+        if not self._auth_param:
+            return f"{self.BASE}{path}"
+        sep = "&" if "?" in path else "?"
+        return f"{self.BASE}{path}{sep}api_key={self._auth_param['api_key']}"
 
     def get_tv_seasons(self, tmdb_id: int) -> list[dict]:
         """
@@ -634,7 +650,7 @@ class TMDBClient:
         """
         if tmdb_id in self._seasons_cache:
             return self._seasons_cache[tmdb_id]
-        url = f"{self.BASE}/tv/{tmdb_id}"
+        url = self._url(f"/tv/{tmdb_id}")
         resp = http_request("GET", url, headers=self.headers)
         time.sleep(TMDB_DELAY)
         if not resp:
@@ -708,7 +724,7 @@ class TMDBClient:
         Returns a full TMDB image URL at w780 size, or None if no stills exist.
         "Best quality" = highest pixel width among available stills.
         """
-        url = f"{self.BASE}/tv/{tmdb_id}/season/{season_num}/episode/{episode_num}/images"
+        url = self._url(f"/tv/{tmdb_id}/season/{season_num}/episode/{episode_num}/images")
         resp = http_request("GET", url, headers=self.headers)
         time.sleep(TMDB_DELAY)
         if not resp:
