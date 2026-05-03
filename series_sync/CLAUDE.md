@@ -11,7 +11,7 @@ Busca metadados de uma série de TV no TMDB e sincroniza com o Notion:
 - Cria/atualiza páginas de temporadas (`Type=Season`): sinopse, poster, air date
 - Cria/atualiza páginas de episódios (`Type=Episode`): nome, overview, still, release date, cover
 
-Trigger: automação do Notion dispara webhook → n8n workflow `Series Boxd` (`Wqa6x53ZRkpI7bw6`) → `execSync` chamando este script.
+Trigger: automação do Notion dispara webhook → n8n workflow `Series Boxd (Python)` (`QNmGcoi1Oad9s1uW`) → `execSync` chamando este script.
 
 ---
 

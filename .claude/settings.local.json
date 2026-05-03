@@ -22,7 +22,8 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('books_sync/main.py'\\).read\\(\\)\\); print\\('syntax ok'\\)\")",
-      "Bash(python books_sync/main.py --help)"
+      "Bash(python books_sync/main.py --help)",
+      "mcp__n8n-mcp__n8n_validate_workflow"
     ]
   }
 }

@@ -182,7 +182,7 @@ n8n-python-scripts/
 | TickTick↔Notion Sync | `FoPcj3MGlsL6FVB5` | Projeto com os 3 workflows de sync |
 | Nami Finance Agent | `UyRklhswVdxJwy22` | Telegram → Gemini → Notion 💰 Transações |
 | GustavoBooks | `YW1MqVhd6zR-ufOvrxJIR` | Webhook do Notion → busca Google Books/Open Library → atualiza página com metadados do livro |
-| Series Boxd | `Wqa6x53ZRkpI7bw6` | Webhook/Schedule → series_sync/main.py → TMDB → atualiza série/temporadas/episódios no Notion |
+| Series Boxd (Python) | `QNmGcoi1Oad9s1uW` | Webhook/Schedule → series_sync/main.py → TMDB → atualiza série/temporadas/episódios no Notion |
 
 ---
 
