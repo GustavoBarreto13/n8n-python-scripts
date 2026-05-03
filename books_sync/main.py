@@ -209,12 +209,13 @@ class NotionClient:
         arr = props.get("Name", {}).get("title", [])
         return arr[0]["plain_text"].strip() if arr else ""
 
-    def extract_search_info(self, page: dict) -> tuple[str, str]:
-        """Returns (title, isbn). isbn is ISBN-10 first, then ISBN-13, or ''."""
+    def extract_search_info(self, page: dict) -> tuple[str, str, str]:
+        """Returns (title, isbn, author). isbn is ISBN-10 first, then ISBN-13, or ''."""
         props = page.get("properties", {})
         title = self._get_title(props)
         isbn = self._get_rich_text(props, "ISBN-10") or self._get_rich_text(props, "ISBN-13")
-        return title, isbn
+        author = self._get_rich_text(props, "Author")
+        return title, isbn, author
 
     def update_page(self, page_id: str, book: BookData) -> tuple[bool, list[str]]:
         """Updates Notion page with book metadata. Returns (success, updated_fields)."""
@@ -291,16 +292,22 @@ class GoogleBooksClient:
             return None
         return self._parse(resp["items"][0]["volumeInfo"])
 
-    def search_by_title(self, title: str) -> Optional[BookData]:
-        log.info(f"Google Books: buscando por título '{title}'")
+    def search_by_title(self, title: str, author: str = "") -> Optional[BookData]:
+        log.info(f"Google Books: buscando por título '{title}'" + (f" e autor '{author}'" if author else ""))
+        q_parts = []
+        if title:
+            q_parts.append(f'intitle:"{title}"')
+        if author:
+            q_parts.append(f'inauthor:"{author}"')
+            
         resp = http_request(
             "GET",
             f"{GOOGLE_BOOKS_BASE}/volumes",
-            params={"q": f'intitle:"{title}"', "key": self.api_key},
+            params={"q": " ".join(q_parts), "key": self.api_key},
         )
         time.sleep(GOOGLE_BOOKS_DELAY)
         if not resp or resp.get("totalItems", 0) == 0 or not resp.get("items"):
-            log.info("Google Books: nenhum resultado por título")
+            log.info("Google Books: nenhum resultado por título/autor")
             return None
         return self._parse(resp["items"][0]["volumeInfo"])
 
@@ -362,16 +369,22 @@ class OpenLibraryClient:
             return None
         return self._parse(data)
 
-    def search_by_title(self, title: str) -> Optional[BookData]:
-        log.info(f"Open Library: buscando por título '{title}'")
+    def search_by_title(self, title: str, author: str = "") -> Optional[BookData]:
+        log.info(f"Open Library: buscando por título '{title}'" + (f" e autor '{author}'" if author else ""))
+        params = {"limit": 1}
+        if title:
+            params["title"] = title
+        if author:
+            params["author"] = author
+
         resp = http_request(
             "GET",
             f"{OPEN_LIBRARY_BASE}/search.json",
-            params={"title": title, "limit": 1},
+            params=params,
         )
         time.sleep(OPEN_LIBRARY_DELAY)
         if not resp or not resp.get("docs"):
-            log.info("Open Library: nenhum resultado por título")
+            log.info("Open Library: nenhum resultado por título/autor")
             return None
 
         doc = resp["docs"][0]
@@ -467,17 +480,17 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": err, "page_id": args.page_id}))
         return 1
 
-    title, isbn = notion.extract_search_info(page)
-    if not title and not isbn:
-        log.error("Página sem título e sem ISBN — impossível buscar")
+    title, isbn, author = notion.extract_search_info(page)
+    if not title and not isbn and not author:
+        log.error("Página sem título, sem autor e sem ISBN — impossível buscar")
         print(json.dumps({"ok": False, "error": "no_search_query", "page_id": args.page_id}))
         return 1
 
-    log.info(f"Livro: '{title}' | ISBN: '{isbn}'")
+    log.info(f"Livro: '{title}' | Autor: '{author}' | ISBN: '{isbn}'")
 
-    # 2. Busca com estratégia ISBN → título, Google → Open Library
+    # 2. Busca com estratégia ISBN → título/autor, Google → Open Library
     book: Optional[BookData] = None
-    query_used = isbn if isbn else title
+    query_used = isbn if isbn else f"{title} {author}".strip()
 
     if isbn:
         if google:
@@ -487,9 +500,9 @@ def main() -> int:
 
     if not book:
         if google:
-            book = google.search_by_title(title)
+            book = google.search_by_title(title, author)
         if not book:
-            book = open_lib.search_by_title(title)
+            book = open_lib.search_by_title(title, author)
 
     if not book:
         log.warning(f"Livro não encontrado: '{query_used}'")
