@@ -66,6 +66,8 @@ TMDB_DELAY = 0.3
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2.0
 
+_TMDB_KEY: str = ""
+
 # ============================================================
 # LOGGING
 # ============================================================
@@ -195,12 +197,26 @@ class SyncStats:
 # ============================================================
 
 
-def tmdb_search_show(title: str, year: str, headers: dict) -> Optional[int]:
+def _tmdb_headers() -> dict:
+    return {"Accept": "application/json"}
+
+
+def _tmdb_params(extra: Optional[dict] = None) -> dict:
+    p: dict = {"api_key": _TMDB_KEY}
+    if extra:
+        p.update(extra)
+    return p
+
+
+def tmdb_search_show(title: str, year: str) -> Optional[int]:
     log.info(f"TMDB: buscando '{title}' ({year})")
-    params: dict = {"query": title}
+    extra: dict = {"query": title}
     if year:
-        params["first_air_date_year"] = year
-    resp = http_request("GET", f"{TMDB_BASE}/search/tv", headers=headers, params=params)
+        extra["first_air_date_year"] = year
+    resp = http_request(
+        "GET", f"{TMDB_BASE}/search/tv",
+        headers=_tmdb_headers(), params=_tmdb_params(extra),
+    )
     time.sleep(TMDB_DELAY)
     if not resp or not resp.get("results"):
         log.warning(f"TMDB: nenhum resultado para '{title}'")
@@ -210,19 +226,21 @@ def tmdb_search_show(title: str, year: str, headers: dict) -> Optional[int]:
     return result["id"]
 
 
-def tmdb_get_show(tmdb_id: int, headers: dict) -> Optional[dict]:
+def tmdb_get_show(tmdb_id: int) -> Optional[dict]:
     log.info(f"TMDB: detalhes do show {tmdb_id}")
-    resp = http_request("GET", f"{TMDB_BASE}/tv/{tmdb_id}", headers=headers)
+    resp = http_request(
+        "GET", f"{TMDB_BASE}/tv/{tmdb_id}",
+        headers=_tmdb_headers(), params=_tmdb_params(),
+    )
     time.sleep(TMDB_DELAY)
     return resp
 
 
-def tmdb_get_season(tmdb_id: int, season_number: int, headers: dict) -> Optional[dict]:
+def tmdb_get_season(tmdb_id: int, season_number: int) -> Optional[dict]:
     log.debug(f"TMDB: temporada S{season_number:02d} do show {tmdb_id}")
     resp = http_request(
-        "GET",
-        f"{TMDB_BASE}/tv/{tmdb_id}/season/{season_number}",
-        headers=headers,
+        "GET", f"{TMDB_BASE}/tv/{tmdb_id}/season/{season_number}",
+        headers=_tmdb_headers(), params=_tmdb_params(),
     )
     time.sleep(TMDB_DELAY)
     return resp
@@ -629,7 +647,6 @@ def notion_update_episode(
 def process_show(
     show: ShowInput,
     token: str,
-    tmdb_hdrs: dict,
     dry_run: bool,
     stats: SyncStats,
 ) -> None:
@@ -637,16 +654,17 @@ def process_show(
 
     tmdb_id = show.tmdb_id
     if not tmdb_id:
-        tmdb_id = tmdb_search_show(show.title, show.year, tmdb_hdrs)
+        tmdb_id = tmdb_search_show(show.title, show.year)
         if not tmdb_id:
             msg = f"Série não encontrada no TMDB: '{show.title}'"
             log.warning(msg)
             stats.errors.append(msg)
             return
 
-    tmdb_data = tmdb_get_show(tmdb_id, tmdb_hdrs)
+    tmdb_data = tmdb_get_show(tmdb_id)
     if not tmdb_data:
-        msg = f"Falha ao buscar detalhes TMDB: show {tmdb_id}"
+        http_err = get_last_http_error() or "resposta vazia"
+        msg = f"Falha ao buscar detalhes TMDB: show {tmdb_id} — {http_err}"
         log.error(msg)
         stats.errors.append(msg)
         return
@@ -665,7 +683,7 @@ def process_show(
     for season in seasons:
         season_number = season.get("season_number", 0)
 
-        tmdb_season = tmdb_get_season(tmdb_id, season_number, tmdb_hdrs)
+        tmdb_season = tmdb_get_season(tmdb_id, season_number)
         if not tmdb_season:
             log.warning(f"{show.title} S{season_number:02d}: não encontrada no TMDB, pulando")
             continue
@@ -755,16 +773,12 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": "missing_notion_token"}))
         return 1
 
-    tmdb_api_key = os.getenv("TMDB_TOKEN", "")
-    if not tmdb_api_key:
+    global _TMDB_KEY
+    _TMDB_KEY = os.getenv("TMDB_TOKEN", "")
+    if not _TMDB_KEY:
         log.error("TMDB_TOKEN não configurado")
         print(json.dumps({"ok": False, "error": "missing_tmdb_api_key"}))
         return 1
-
-    tmdb_hdrs = {
-        "Authorization": f"Bearer {tmdb_api_key}",
-        "Accept": "application/json",
-    }
 
     single_mode = bool(args.page_id)
     if single_mode:
@@ -784,7 +798,7 @@ def main() -> int:
     for show in shows:
         stats = SyncStats()
         try:
-            process_show(show, notion_token, tmdb_hdrs, args.dry_run, stats)
+            process_show(show, notion_token, args.dry_run, stats)
         except Exception as e:
             log.exception(f"Erro ao processar {show.title}: {e}")
             stats.errors.append(f"{show.title}: {e}")

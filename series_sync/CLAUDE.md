@@ -100,11 +100,11 @@ python3 main.py --page-id <id> -v
 | Variável | Obrigatória | Descrição |
 |---|---|---|
 | `NOTION_TOKEN` | Sim | Bearer token da integration do Notion |
-| `TMDB_TOKEN` | Sim | Bearer token TMDB v4 (JWT) — configurar no Dokploy |
+| `TMDB_TOKEN` | Sim | API Key TMDB v3 — configurar no Dokploy |
 | `NOTION_DB_SERIES` | Não | ID do database (default: `196f090e-a3ca-80d7-adae-ee1e3da03edf`) |
 | `OPENAPI_MCP_HEADERS` | Fallback | Usado para extrair `NOTION_TOKEN` se não estiver direto |
 
-O `TMDB_TOKEN` é o Bearer token JWT do TMDB (v4 auth). Está hardcoded no workflow n8n antigo — extrair dali e configurar no Dokploy.
+O `TMDB_TOKEN` é a API Key v3 do TMDB. Disponível em tmdb.org → Settings → API → API Key.
 
 ---
 
