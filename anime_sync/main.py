@@ -889,6 +889,8 @@ def process_anime(
     tmdb_debug: dict = {
         "tmdb_client": tmdb is not None,
         "arm": None,
+        "aired_from": norm.get("aired_from"),
+        "seasons_available": None,
         "season_detected": None,
         "thumbnails_found": 0,
         "thumbnails_missing": 0,
@@ -897,6 +899,11 @@ def process_anime(
         arm = arm_get_tmdb(anime.mal_id)
         tmdb_debug["arm"] = arm
         if arm and arm["type"] == "tv":
+            seasons = tmdb.get_tv_seasons(arm["tmdb_id"])
+            tmdb_debug["seasons_available"] = [
+                {"n": s.get("season_number"), "air_date": s.get("air_date"), "episodes": s.get("episode_count")}
+                for s in seasons
+            ]
             season_num = tmdb.detect_season(arm["tmdb_id"], norm["aired_from"])
             tmdb_debug["season_detected"] = season_num
             log.info(f"  TMDB: show={arm['tmdb_id']} season={season_num}")
