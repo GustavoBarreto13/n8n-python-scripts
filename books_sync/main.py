@@ -241,22 +241,23 @@ class NotionClient:
             props["ISBN-10"] = {"rich_text": [{"text": {"content": book.isbn_10}}]}
             updated_fields.append("ISBN-10")
 
-        if book.cover_url:
-            props["Cover"] = {
-                "files": [{"name": "cover", "type": "external", "external": {"url": book.cover_url}}]
-            }
-            updated_fields.append("Cover")
-
         if self.dry_run:
+            if book.cover_url:
+                updated_fields.append("Cover")
             log.info(f"[dry-run] would update {page_id}: {updated_fields}")
             return True, updated_fields
 
-        if not props:
+        if not props and not book.cover_url:
             log.info("Nenhum campo para atualizar")
             return True, []
 
+        patch_body: dict = {"properties": props}
+        if book.cover_url:
+            patch_body["cover"] = {"type": "external", "external": {"url": book.cover_url}}
+            updated_fields.append("Cover")
+
         url = f"{NOTION_BASE}/pages/{page_id}"
-        resp = http_request("PATCH", url, headers=self.headers, json_body={"properties": props})
+        resp = http_request("PATCH", url, headers=self.headers, json_body=patch_body)
         time.sleep(NOTION_DELAY)
 
         if resp is None:
