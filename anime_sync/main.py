@@ -37,7 +37,7 @@ import re             # regex used to extract token from OPENAPI_MCP_HEADERS fal
 import sys            # sys.exit() and sys.stderr for logging stream
 import time           # time.sleep() for rate limiting between API calls
 from dataclasses import dataclass, field   # lightweight data containers (AnimeInput, Episode, SyncStats)
-from datetime import datetime, timezone    # parse/format ISO 8601 dates and UTC timestamps
+from datetime import datetime, timezone, timedelta    # parse/format ISO 8601 dates and UTC timestamps
 from pathlib import Path                   # resolve .env file path relative to this script
 from typing import Any, Optional           # type hints
 
@@ -567,12 +567,13 @@ def anilist_get_schedule_and_banner(mal_id: int) -> tuple[list[Episode], Optiona
     banner = media.get("bannerImage")
     eps: list[Episode] = []
     now = time.time()  # current Unix timestamp for comparing with airingAt
+    tz_br = timezone(timedelta(hours=-3))
 
     for node in (media.get("airingSchedule", {}) or {}).get("nodes", []) or []:
         airing_at = node.get("airingAt")
         if not airing_at:
             continue
-        dt = datetime.fromtimestamp(airing_at, tz=timezone.utc)
+        dt = datetime.fromtimestamp(airing_at, tz=tz_br)
         # If the episode hasn't aired yet, mark it as "Agendado" so Notion shows a future date.
         status = "Agendado" if airing_at > now else "Lançado"
         eps.append(Episode(
@@ -764,16 +765,22 @@ def merge_episodes(jikan_eps: list[Episode], anilist_eps: list[Episode]) -> list
     Combine episode lists from Jikan and AniList into a single deduplicated list.
 
     Strategy:
-      1. Start with AniList episodes (they have future "Agendado" entries).
-      2. Overwrite with Jikan episodes where available (better titles + synopsis).
+      1. Start with AniList episodes (they have future "Agendado" entries and exact timestamps).
+      2. Overwrite with Jikan episodes where available, preserving AniList's aired date and status.
 
     Result: sorted by episode number, with the best data from each source.
     """
     by_num: dict[int, Episode] = {}
     for ep in anilist_eps:
-        by_num[ep.number] = ep   # AniList first (provides scheduled episodes)
+        by_num[ep.number] = ep   # AniList first (provides scheduled episodes and exact timestamps)
     for ep in jikan_eps:
-        by_num[ep.number] = ep   # Jikan overwrites (better title + synopsis)
+        if ep.number in by_num:
+            # Preserve the precise timezone-adjusted air date from AniList
+            existing = by_num[ep.number]
+            existing.title = ep.title
+            existing.synopsis = ep.synopsis
+        else:
+            by_num[ep.number] = ep   # Fallback to Jikan entirely if AniList missed it
     return sorted(by_num.values(), key=lambda e: e.number)
 
 
