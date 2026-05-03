@@ -706,8 +706,14 @@ def process_show(
             continue
 
         existing_episodes = notion_find_existing_episodes(season_page_id, token)
+        tmdb_episodes = tmdb_season.get("episodes", [])
+        log.info(
+            f"{show.title} S{season_number:02d}: "
+            f"{len(tmdb_episodes)} ep(s) no TMDB, "
+            f"{len(existing_episodes)} no Notion"
+        )
 
-        for ep in tmdb_season.get("episodes", []):
+        for ep in tmdb_episodes:
             ep_num = ep.get("episode_number", 0)
             s_num = ep.get("season_number", season_number)
             ep_key = (s_num, ep_num)
@@ -730,6 +736,10 @@ def process_show(
                 )
                 if ok:
                     stats.episodes_updated += 1
+                else:
+                    err = get_last_http_error()
+                    if err:
+                        stats.errors.append(f"S{s_num:02d}E{ep_num:02d} update: {err}")
             else:
                 ok = notion_create_episode(
                     season_page_id=season_page_id,
@@ -741,6 +751,10 @@ def process_show(
                 )
                 if ok:
                     stats.episodes_created += 1
+                else:
+                    err = get_last_http_error()
+                    if err:
+                        stats.errors.append(f"S{s_num:02d}E{ep_num:02d} create: {err}")
 
     stats.show_title = show.title
     stats.tmdb_id = tmdb_id
