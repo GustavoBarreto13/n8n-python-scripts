@@ -162,3 +162,107 @@ def http_request(
 
     log.error(f"Falha definitiva em {url} após {MAX_RETRIES} tentativas")
     return None
+
+
+# ============================================================
+# BOOK DATA
+# ============================================================
+
+
+@dataclass
+class BookData:
+    title: str = ""
+    authors: str = ""
+    description: str = ""
+    publish_date: str = ""      # YYYY-MM-DD
+    isbn_10: str = ""
+    page_count: int = 0
+    cover_url: str = ""
+    source: str = ""            # "google_books" | "open_library"
+
+
+# ============================================================
+# NOTION CLIENT
+# ============================================================
+
+
+class NotionClient:
+    def __init__(self, token: str, dry_run: bool = False):
+        self.headers = {
+            "Authorization": f"Bearer {token}",
+            "Notion-Version": NOTION_VERSION,
+            "Content-Type": "application/json",
+        }
+        self.dry_run = dry_run
+
+    def get_page(self, page_id: str) -> Optional[dict]:
+        url = f"{NOTION_BASE}/pages/{page_id}"
+        resp = http_request("GET", url, headers=self.headers)
+        time.sleep(NOTION_DELAY)
+        return resp
+
+    def _get_rich_text(self, props: dict, key: str) -> str:
+        arr = props.get(key, {}).get("rich_text", [])
+        return arr[0]["plain_text"].strip() if arr else ""
+
+    def _get_title(self, props: dict) -> str:
+        arr = props.get("Name", {}).get("title", [])
+        return arr[0]["plain_text"].strip() if arr else ""
+
+    def extract_search_info(self, page: dict) -> tuple[str, str]:
+        """Returns (title, isbn). isbn is ISBN-10 first, then ISBN-13, or ''."""
+        props = page.get("properties", {})
+        title = self._get_title(props)
+        isbn = self._get_rich_text(props, "ISBN-10") or self._get_rich_text(props, "ISBN-13")
+        return title, isbn
+
+    def update_page(self, page_id: str, book: BookData) -> tuple[bool, list[str]]:
+        """Updates Notion page with book metadata. Returns (success, updated_fields)."""
+        props: dict = {}
+        updated_fields: list[str] = []
+
+        if book.authors:
+            props["Author"] = {"rich_text": [{"text": {"content": book.authors}}]}
+            updated_fields.append("Author")
+
+        if book.page_count:
+            props["Pages"] = {"number": book.page_count}
+            updated_fields.append("Pages")
+
+        if book.description:
+            props["Description"] = {"rich_text": [{"text": {"content": book.description[:2000]}}]}
+            updated_fields.append("Description")
+
+        if book.publish_date:
+            props["Publish Date"] = {"date": {"start": book.publish_date}}
+            updated_fields.append("Publish Date")
+
+        if book.isbn_10:
+            props["ISBN-10"] = {"rich_text": [{"text": {"content": book.isbn_10}}]}
+            updated_fields.append("ISBN-10")
+
+        if book.cover_url:
+            props["Cover"] = {
+                "files": [{"name": "cover", "type": "external", "external": {"url": book.cover_url}}]
+            }
+            updated_fields.append("Cover")
+
+        if self.dry_run:
+            log.info(f"[dry-run] would update {page_id}: {updated_fields}")
+            return True, updated_fields
+
+        if not props:
+            log.info("Nenhum campo para atualizar")
+            return True, []
+
+        url = f"{NOTION_BASE}/pages/{page_id}"
+        resp = http_request("PATCH", url, headers=self.headers, json_body={"properties": props})
+        time.sleep(NOTION_DELAY)
+
+        if resp is None:
+            err = get_last_http_error() or "unknown"
+            log.error(f"Falha ao atualizar página {page_id}: {err}")
+            return False, []
+
+        log.info(f"✓ Notion atualizado: {updated_fields}")
+        return True, updated_fields
