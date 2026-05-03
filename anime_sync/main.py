@@ -653,17 +653,30 @@ class TMDBClient:
         (e.g., Attack on Titan S4 would get S1 thumbnails).
 
         Strategy: compare the anime's aired_from date against each season's air_date
-        in TMDB and pick the closest one.
+        in TMDB and pick the closest one. Falls back to the LAST season (not 1)
+        when the date is missing or unparseable — currently-airing shows are almost
+        always the latest season, so this is a much safer default.
         """
-        if not anime_aired_from:
-            return 1
         seasons = self.get_tv_seasons(tmdb_id)
         if not seasons:
             return 1
+
+        # For currently-airing shows, the latest season is the safest fallback
+        # when we can't determine the correct one from dates.
+        last_season_num = max(s["season_number"] for s in seasons)
+
+        if not anime_aired_from:
+            return last_season_num
+
         try:
             target = datetime.fromisoformat(anime_aired_from.replace("Z", "+00:00"))
+            # Jikan sometimes returns date-only strings ("2024-10-01") which fromisoformat
+            # parses as naive datetimes. Make it aware so the subtraction below doesn't
+            # raise TypeError against the always-aware TMDB season dates.
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=timezone.utc)
         except ValueError:
-            return 1
+            return last_season_num
 
         # Find the season whose start date is closest to the anime's premiere.
         best = None
@@ -681,7 +694,7 @@ class TMDBClient:
                 best_delta = delta
                 best = s
 
-        season_num = best["season_number"] if best else 1
+        season_num = best["season_number"] if best else last_season_num
         log.debug(f"TMDB {tmdb_id}: aired_from={anime_aired_from} → season {season_num}")
         return season_num
 
