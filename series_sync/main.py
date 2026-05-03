@@ -186,6 +186,7 @@ class SyncStats:
     show_title: str = ""
     tmdb_id: int = 0
     seasons_processed: int = 0
+    episodes_found_tmdb: int = 0
     episodes_created: int = 0
     episodes_updated: int = 0
     episodes_skipped: int = 0
@@ -707,6 +708,7 @@ def process_show(
 
         existing_episodes = notion_find_existing_episodes(season_page_id, token)
         tmdb_episodes = tmdb_season.get("episodes", [])
+        stats.episodes_found_tmdb += len(tmdb_episodes)
         log.info(
             f"{show.title} S{season_number:02d}: "
             f"{len(tmdb_episodes)} ep(s) no TMDB, "
@@ -823,6 +825,7 @@ def main() -> int:
         "ok": not bool(all_errors),
         "dry_run": args.dry_run,
         "seasons_processed": sum(s.seasons_processed for s in stats_list),
+        "episodes_found_tmdb": sum(s.episodes_found_tmdb for s in stats_list),
         "episodes_created": sum(s.episodes_created for s in stats_list),
         "episodes_updated": sum(s.episodes_updated for s in stats_list),
         "episodes_skipped": sum(s.episodes_skipped for s in stats_list),
