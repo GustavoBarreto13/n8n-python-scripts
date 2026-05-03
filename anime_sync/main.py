@@ -662,28 +662,34 @@ class TMDBClient:
         self._seasons_cache[tmdb_id] = seasons
         return seasons
 
-    def detect_season(self, tmdb_id: int, anime_aired_from: Optional[str]) -> int:
+    # Reject a season match when its start date is more than this many days
+    # away from the anime's aired_from. Anime cours are quarterly (≈90 days),
+    # so 365 gives one full year of slack while still catching the case where
+    # TMDB has only an earlier season (e.g. Re:Zero S4 in MAL but TMDB only
+    # exposes S1 from 2016 — better no thumbnail than wrong S1 thumbnail).
+    SEASON_MATCH_MAX_DAYS = 365
+
+    def detect_season(self, tmdb_id: int, anime_aired_from: Optional[str]) -> Optional[int]:
         """
         Find which TMDB season number matches this anime's premiere date.
 
-        Without this, we'd always use season 1 — which is wrong for sequels
-        (e.g., Attack on Titan S4 would get S1 thumbnails).
+        Returns the matching season_number, or None when no TMDB season is close
+        enough in time to be trustworthy. Returning None signals callers to skip
+        thumbnail lookup entirely instead of pulling stills from a wrong season
+        (which is what was happening for sequels whose TMDB show only had S1).
 
         Strategy: compare the anime's aired_from date against each season's air_date
-        in TMDB and pick the closest one. Falls back to the LAST season (not 1)
-        when the date is missing or unparseable — currently-airing shows are almost
-        always the latest season, so this is a much safer default.
+        in TMDB and pick the closest. If the closest is still more than
+        SEASON_MATCH_MAX_DAYS away, treat as no match.
         """
         seasons = self.get_tv_seasons(tmdb_id)
         if not seasons:
-            return 1
-
-        # For currently-airing shows, the latest season is the safest fallback
-        # when we can't determine the correct one from dates.
-        last_season_num = max(s["season_number"] for s in seasons)
+            return None
 
         if not anime_aired_from:
-            return last_season_num
+            # Without a target date we can't validate freshness — fall back to
+            # the latest known season (best guess for currently-airing shows).
+            return max(s["season_number"] for s in seasons)
 
         try:
             target = datetime.fromisoformat(anime_aired_from.replace("Z", "+00:00"))
@@ -693,7 +699,7 @@ class TMDBClient:
             if target.tzinfo is None:
                 target = target.replace(tzinfo=timezone.utc)
         except ValueError:
-            return last_season_num
+            return None
 
         # Find the season whose start date is closest to the anime's premiere.
         best = None
@@ -711,7 +717,19 @@ class TMDBClient:
                 best_delta = delta
                 best = s
 
-        season_num = best["season_number"] if best else last_season_num
+        if not best:
+            return None
+
+        max_delta_seconds = self.SEASON_MATCH_MAX_DAYS * 86400
+        if best_delta > max_delta_seconds:
+            log.warning(
+                f"TMDB {tmdb_id}: closest season is {best['season_number']} "
+                f"(air_date={best.get('air_date')}) but aired_from={anime_aired_from} "
+                f"is {best_delta / 86400:.0f} days away — skipping thumbnails"
+            )
+            return None
+
+        season_num = best["season_number"]
         log.debug(f"TMDB {tmdb_id}: aired_from={anime_aired_from} → season {season_num}")
         return season_num
 
@@ -906,14 +924,19 @@ def process_anime(
             ]
             season_num = tmdb.detect_season(arm["tmdb_id"], norm["aired_from"])
             tmdb_debug["season_detected"] = season_num
-            log.info(f"  TMDB: show={arm['tmdb_id']} season={season_num}")
-            for ep in merged:
-                thumb = tmdb.get_episode_images(arm["tmdb_id"], season_num, ep.number)
-                if thumb:
-                    ep.thumbnail = thumb
-                    tmdb_debug["thumbnails_found"] += 1
-                else:
-                    tmdb_debug["thumbnails_missing"] += 1
+            if season_num is None:
+                # detect_season decided no TMDB season matched closely enough —
+                # leave thumbnails empty rather than apply wrong-season stills.
+                log.info(f"  TMDB: show={arm['tmdb_id']} sem season correspondente — sem thumbnails")
+            else:
+                log.info(f"  TMDB: show={arm['tmdb_id']} season={season_num}")
+                for ep in merged:
+                    thumb = tmdb.get_episode_images(arm["tmdb_id"], season_num, ep.number)
+                    if thumb:
+                        ep.thumbnail = thumb
+                        tmdb_debug["thumbnails_found"] += 1
+                    else:
+                        tmdb_debug["thumbnails_missing"] += 1
 
     # Step 8: Load existing Notion episodes to avoid duplicates.
     existing = notion.find_existing_episodes(anime.page_id)
