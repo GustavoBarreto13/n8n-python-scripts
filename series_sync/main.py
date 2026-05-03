@@ -709,6 +709,11 @@ def process_show(
         existing_episodes = notion_find_existing_episodes(season_page_id, token)
         tmdb_episodes = tmdb_season.get("episodes", [])
         stats.episodes_found_tmdb += len(tmdb_episodes)
+        if not tmdb_episodes:
+            stats.errors.append(
+                f"S{season_number:02d}: TMDB retornou 0 episódios. "
+                f"Keys presentes: {list(tmdb_season.keys())}"
+            )
         log.info(
             f"{show.title} S{season_number:02d}: "
             f"{len(tmdb_episodes)} ep(s) no TMDB, "
