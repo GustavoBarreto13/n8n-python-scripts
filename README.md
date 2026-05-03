@@ -16,6 +16,10 @@ Delta sync da lista do MyAnimeList → database "Animes" do Notion, baseado em `
 
 **Trigger**: workflow `MAL Sync` (`RA5ojUMIbU7Kma6M`)
 
+### `books_sync`
+
+Busca metadados de livros (Google Books com fallback para Open Library) usando ISBN ou Título + Autor e atualiza a página no Notion com propriedades como Author, Pages, Description, Publish Date, ISBN-10 e Cover.
+
 ### `ticktick_notion_sync`
 
 Sincronização bidirecional entre TickTick e a database "Tasks" do Notion. Opera em três modos: `tt-to-notion`, `notion-to-tt` e `bootstrap`.
@@ -34,6 +38,8 @@ Processa emails do Gmail com a personalidade da Lucy (Cyberpunk Edgerunners) e e
 n8n-python-scripts/
 ├── requirements.txt
 ├── anime_sync/
+│   └── main.py
+├── books_sync/
 │   └── main.py
 ├── mal_sync/
 │   └── main.py
