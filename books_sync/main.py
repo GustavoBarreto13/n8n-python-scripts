@@ -429,3 +429,89 @@ class OpenLibraryClient:
             cover_url=cover_url,
             source="open_library",
         )
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Busca metadados de livro e atualiza Notion")
+    parser.add_argument("--page-id", required=True, help="ID da página Notion do livro")
+    parser.add_argument("--dry-run", action="store_true", help="Loga sem escrever no Notion")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
+
+    setup_logging(args.verbose)
+
+    notion_token = resolve_notion_token()
+    if not notion_token:
+        log.error("NOTION_TOKEN não configurado")
+        print(json.dumps({"ok": False, "error": "missing_notion_token"}))
+        return 1
+
+    google_api_key = os.getenv("GOOGLE_BOOKS_API_KEY", "")
+
+    notion = NotionClient(notion_token, dry_run=args.dry_run)
+    google = GoogleBooksClient(google_api_key) if google_api_key else None
+    open_lib = OpenLibraryClient()
+
+    # 1. Lê a página Notion
+    log.info(f"Lendo página Notion {args.page_id}")
+    page = notion.get_page(args.page_id)
+    if not page:
+        err = get_last_http_error() or "page_not_found"
+        log.error(f"Falha ao ler página: {err}")
+        print(json.dumps({"ok": False, "error": err, "page_id": args.page_id}))
+        return 1
+
+    title, isbn = notion.extract_search_info(page)
+    if not title and not isbn:
+        log.error("Página sem título e sem ISBN — impossível buscar")
+        print(json.dumps({"ok": False, "error": "no_search_query", "page_id": args.page_id}))
+        return 1
+
+    log.info(f"Livro: '{title}' | ISBN: '{isbn}'")
+
+    # 2. Busca com estratégia ISBN → título, Google → Open Library
+    book: Optional[BookData] = None
+    query_used = isbn if isbn else title
+
+    if isbn:
+        if google:
+            book = google.search_by_isbn(isbn)
+        if not book:
+            book = open_lib.search_by_isbn(isbn)
+
+    if not book:
+        if google:
+            book = google.search_by_title(title)
+        if not book:
+            book = open_lib.search_by_title(title)
+
+    if not book:
+        log.warning(f"Livro não encontrado: '{query_used}'")
+        print(json.dumps({"ok": False, "found": False, "error": "book_not_found", "query": query_used}))
+        return 0
+
+    log.info(f"Encontrado via {book.source}: '{book.title}' por {book.authors}")
+
+    # 3. Atualiza Notion
+    success, updated_fields = notion.update_page(args.page_id, book)
+
+    result = {
+        "ok": success,
+        "found": True,
+        "source": book.source,
+        "title": book.title,
+        "authors": book.authors,
+        "isbn": book.isbn_10,
+        "updated_fields": updated_fields,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if success else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
