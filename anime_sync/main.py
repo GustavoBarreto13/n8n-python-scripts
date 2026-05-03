@@ -870,15 +870,27 @@ def process_anime(
     log.info(f"  {len(merged)} episódios (Jikan={len(jikan_eps)} + AniList={len(anilist_eps)})")
 
     # Step 7: TMDB thumbnails — requires ARM to translate MAL ID → TMDB ID first.
+    tmdb_debug: dict = {
+        "tmdb_client": tmdb is not None,
+        "arm": None,
+        "season_detected": None,
+        "thumbnails_found": 0,
+        "thumbnails_missing": 0,
+    }
     if tmdb:
         arm = arm_get_tmdb(anime.mal_id)
+        tmdb_debug["arm"] = arm
         if arm and arm["type"] == "tv":
             season_num = tmdb.detect_season(arm["tmdb_id"], norm["aired_from"])
+            tmdb_debug["season_detected"] = season_num
             log.info(f"  TMDB: show={arm['tmdb_id']} season={season_num}")
             for ep in merged:
                 thumb = tmdb.get_episode_images(arm["tmdb_id"], season_num, ep.number)
                 if thumb:
                     ep.thumbnail = thumb
+                    tmdb_debug["thumbnails_found"] += 1
+                else:
+                    tmdb_debug["thumbnails_missing"] += 1
 
     # Step 8: Load existing Notion episodes to avoid duplicates.
     existing = notion.find_existing_episodes(anime.page_id)
@@ -894,16 +906,32 @@ def process_anime(
         notion_name = f"#{ep.number} - {anime.title} - {ep.title}"
         ex = existing.get(ep.number)
 
+        thumb_set = bool(ep.thumbnail)
+        had_cover = ex["has_cover"] if ex else None
+
         if not ex:
             ok = notion.create_episode(anime.page_id, ep, notion_name)
             err = None if ok else get_last_http_error()
-            decisions.append({"n": ep.number, "action": "create" if ok else "create_FAILED", "new_name": notion_name, "err": err})
+            decisions.append({
+                "n": ep.number,
+                "action": "create" if ok else "create_FAILED",
+                "new_name": notion_name,
+                "thumb": thumb_set,
+                "had_cover": had_cover,
+                "err": err,
+            })
             if ok:
                 stats.episodes_created += 1
             else:
                 stats.errors.append(f"create_failed: ep {ep.number} ({anime.title}) — {err}")
         elif ex["status"] == "Lançado" and ex["name"] == notion_name and (ex["has_cover"] or not ep.thumbnail):
-            decisions.append({"n": ep.number, "action": "skip", "reason": "lancado_same_name"})
+            decisions.append({
+                "n": ep.number,
+                "action": "skip",
+                "reason": "lancado_same_name",
+                "thumb": thumb_set,
+                "had_cover": had_cover,
+            })
             stats.episodes_skipped += 1
         else:
             ok = notion.update_episode(ex["page_id"], ep, notion_name)
@@ -915,6 +943,8 @@ def process_anime(
                 "ex_name": ex["name"],
                 "new_name": notion_name,
                 "new_status": ep.status,
+                "thumb": thumb_set,
+                "had_cover": had_cover,
                 "err": err,
             })
             if ok:
@@ -927,6 +957,7 @@ def process_anime(
         "existing_count": len(existing),
         "merged_numbers": sorted([ep.number for ep in merged]),
         "existing_numbers": sorted(existing.keys()),
+        "tmdb": tmdb_debug,
         "decisions": decisions,
     }
 
@@ -1009,6 +1040,7 @@ def main() -> int:
         "ok": not bool(stats.errors),
         "dry_run": args.dry_run,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "tmdb_configured": tmdb is not None,
         **stats.to_dict(),
     }
     print(json.dumps(result, ensure_ascii=False))
