@@ -64,18 +64,45 @@ Libs instaladas manualmente não sobrevivem ao redeploy — colocar no `Dockerfi
 
 ## Como o n8n chama os scripts
 
-Em Code nodes do n8n, o padrão usado é:
+Em Code nodes do n8n, o padrão obrigatório é usar `spawnSync` com `-v` para capturar stderr nos logs visíveis pelo output do n8n:
 
 ```javascript
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
-const result = execSync(
-  '/opt/venv/bin/python3 /home/node/scripts/nome_do_script/main.py',
+const proc = spawnSync(
+  '/opt/venv/bin/python3',
+  ['/home/node/scripts/nome_do_script/main.py', '-v'],
   { encoding: 'utf8', timeout: 60000 }
 );
 
-const data = JSON.parse(result);
-return [{ json: data }];
+if (proc.error) throw proc.error;
+
+const result = JSON.parse(proc.stdout.trim());
+result._logs = proc.stderr.slice(-3000);
+return [{ json: result }];
+```
+
+**Por que `spawnSync` e não `execSync`:**
+- `execSync` descarta o stderr — impossível debugar pelo n8n
+- `spawnSync` captura stdout e stderr separadamente
+- `result._logs` expõe os últimas 3000 chars dos logs no output do n8n, sem poluir o JSON principal
+
+**Para scripts com argumentos (ex: webhook com page-id):**
+```javascript
+const { spawnSync } = require('child_process');
+const pageId = items[0].json.body.data.id;
+
+const proc = spawnSync(
+  '/opt/venv/bin/python3',
+  ['/home/node/scripts/nome_do_script/main.py', '--page-id', pageId, '-v'],
+  { encoding: 'utf8', timeout: 120000 }
+);
+
+if (proc.error) throw proc.error;
+
+const result = JSON.parse(proc.stdout.trim());
+result._logs = proc.stderr.slice(-3000);
+return [{ json: result }];
 ```
 
 O script Python deve sempre retornar JSON válido via `print()` no stdout. Erros devem ser capturados e retornados como JSON também.
@@ -224,6 +251,11 @@ docker exec -it <container_id> bash
 
 **JSON inválido retornado pro n8n**
 - O script está imprimindo algo além do JSON — redirecionar logs para stderr.
+- Com `spawnSync`, stdout e stderr são separados automaticamente — não há risco de mistura.
 
-**Timeout no execSync**
-- Aumentar: `execSync('...', { encoding: 'utf8', timeout: 120000 })`
+**Timeout**
+- Aumentar o timeout: `spawnSync(..., { encoding: 'utf8', timeout: 120000 })`
+
+**Logs não aparecem no `_logs`**
+- Verificar se o script usa `setup_logging()` que direciona para stderr.
+- Verificar se o Code node usa `-v` nos args do `spawnSync`.

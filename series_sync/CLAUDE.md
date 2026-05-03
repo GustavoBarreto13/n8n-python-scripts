@@ -78,7 +78,7 @@ python3 main.py --page-id <id> -v
 | `Overview` | rich_text | `overview` |
 | `ID` | number | tmdb_series_id |
 | `Poster` | files | `poster_path` |
-| `Air Date` | date | `air_date` |
+| `Release Date` | date | `air_date` |
 
 ### Episode (Type=Episode) — title: `"ShowName - S01E01 - Título"`
 | Campo | Tipo | Fonte |

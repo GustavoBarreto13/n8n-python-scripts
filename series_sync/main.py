@@ -496,7 +496,7 @@ def notion_upsert_season(
     if poster_path:
         props["Poster"] = _files("Poster", f"{TMDB_IMAGE_BASE}{poster_path}")
     if air_date:
-        props["Air Date"] = {"date": {"start": air_date}}
+        props["Release Date"] = {"date": {"start": air_date}}
 
     if dry_run:
         action = "update" if existing_page_id else "create"
