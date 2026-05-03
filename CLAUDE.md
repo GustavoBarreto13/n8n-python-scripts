@@ -129,6 +129,7 @@ import os
 
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")        # via OPENAPI_MCP_HEADERS
 N8N_HOST     = os.environ.get("N8N_HOST")            # n8n.gusstavo42-vps.cloud
+GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY")  # para books_sync — configurar no Dokploy
 ```
 
 Credenciais de APIs externas devem ser passadas como argumentos pelo n8n ou lidas de env vars configuradas no Dokploy.
@@ -157,6 +158,9 @@ n8n-python-scripts/
 ├── nami_finance_agent/
 │   ├── main.py
 │   └── CLAUDE.md                    ← contexto específico do nami_finance_agent
+├── books_sync/
+│   ├── main.py
+│   └── CLAUDE.md                    ← contexto específico do books_sync
 └── lucy_digest/                     ← futuro
     └── main.py
 ```
@@ -173,6 +177,7 @@ n8n-python-scripts/
 | N8N Agent AI | `sepWZYkldB2KcJQSbEQ-V` | Agente principal com MCP |
 | TickTick↔Notion Sync | `FoPcj3MGlsL6FVB5` | Projeto com os 3 workflows de sync |
 | Nami Finance Agent | `UyRklhswVdxJwy22` | Telegram → Gemini → Notion 💰 Transações |
+| GustavoBooks | `YW1MqVhd6zR-ufOvrxJIR` | Webhook do Notion → busca Google Books/Open Library → atualiza página com metadados do livro |
 
 ---
 
