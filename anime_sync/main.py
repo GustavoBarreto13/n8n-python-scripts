@@ -365,7 +365,7 @@ class NotionClient:
         means the match works even when the existing title is a placeholder and
         Jikan/AniList later provides the real episode title.
 
-        Value: {"page_id": str, "status": str | None, "name": str}
+        Value: {"page_id": str, "status": str | None, "name": str, "has_cover": bool}
         """
         url = f"{self.BASE}/databases/{NOTION_DB_ANIMES}/query"
         body = {
@@ -400,7 +400,8 @@ class NotionClient:
                 ep_num = int(m.group(1))
                 status_obj = props.get("Episode Status", {}).get("select")
                 status = status_obj["name"] if status_obj else None
-                existing[ep_num] = {"page_id": page["id"], "status": status, "name": name}
+                has_cover = page.get("cover") is not None
+                existing[ep_num] = {"page_id": page["id"], "status": status, "name": name, "has_cover": has_cover}
             has_more = resp.get("has_more", False)
             start_cursor = resp.get("next_cursor")
             time.sleep(NOTION_DELAY)
@@ -901,7 +902,7 @@ def process_anime(
                 stats.episodes_created += 1
             else:
                 stats.errors.append(f"create_failed: ep {ep.number} ({anime.title}) — {err}")
-        elif ex["status"] == "Lançado" and ex["name"] == notion_name:
+        elif ex["status"] == "Lançado" and ex["name"] == notion_name and (ex["has_cover"] or not ep.thumbnail):
             decisions.append({"n": ep.number, "action": "skip", "reason": "lancado_same_name"})
             stats.episodes_skipped += 1
         else:
