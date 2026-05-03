@@ -337,3 +337,95 @@ class GoogleBooksClient:
             cover_url=cover_url,
             source="google_books",
         )
+
+
+# ============================================================
+# OPEN LIBRARY CLIENT (fallback)
+# ============================================================
+
+
+class OpenLibraryClient:
+    def search_by_isbn(self, isbn: str) -> Optional[BookData]:
+        log.info(f"Open Library: buscando por ISBN {isbn}")
+        resp = http_request(
+            "GET",
+            f"{OPEN_LIBRARY_BASE}/api/books",
+            params={"bibkeys": f"ISBN:{isbn}", "jscmd": "data", "format": "json"},
+        )
+        time.sleep(OPEN_LIBRARY_DELAY)
+        if not resp:
+            return None
+        data = resp.get(f"ISBN:{isbn}")
+        if not data:
+            log.info("Open Library: nenhum resultado por ISBN")
+            return None
+        return self._parse(data)
+
+    def search_by_title(self, title: str) -> Optional[BookData]:
+        log.info(f"Open Library: buscando por título '{title}'")
+        resp = http_request(
+            "GET",
+            f"{OPEN_LIBRARY_BASE}/search.json",
+            params={"title": title, "limit": 1},
+        )
+        time.sleep(OPEN_LIBRARY_DELAY)
+        if not resp or not resp.get("docs"):
+            log.info("Open Library: nenhum resultado por título")
+            return None
+
+        doc = resp["docs"][0]
+
+        isbn_list = doc.get("isbn") or []
+        isbn_10 = next((i for i in isbn_list if len(i) == 10), "")
+        isbn_13 = next((i for i in isbn_list if len(i) == 13), "")
+
+        pub_year = str(doc.get("first_publish_year") or "")
+        pub_date = f"{pub_year}-01-01" if pub_year else ""
+
+        authors = ", ".join(doc.get("author_name") or []) or "Autor Desconhecido"
+        cover_id = doc.get("cover_i")
+        cover_url = f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg" if cover_id else ""
+
+        return BookData(
+            title=doc.get("title") or "",
+            authors=authors,
+            description="",  # search.json doesn't return description
+            publish_date=pub_date,
+            isbn_10=isbn_10 or isbn_13,
+            page_count=doc.get("number_of_pages_median") or 0,
+            cover_url=cover_url,
+            source="open_library",
+        )
+
+    def _parse(self, data: dict) -> BookData:
+        identifiers = data.get("identifiers") or {}
+        isbn_10_list = identifiers.get("isbn_10") or []
+        isbn_13_list = identifiers.get("isbn_13") or []
+        isbn = (isbn_10_list[0] if isbn_10_list else "") or (isbn_13_list[0] if isbn_13_list else "")
+
+        pub_date = data.get("publish_date") or ""
+        # Normalise "January 1, 2001" / "2001" / "2001-01" to YYYY-MM-DD
+        m4 = re.search(r"\b(\d{4})\b", pub_date)
+        pub_date_norm = f"{m4.group(1)}-01-01" if m4 else ""
+
+        authors_list = data.get("authors") or []
+        authors = ", ".join(a.get("name", "") for a in authors_list) or "Autor Desconhecido"
+
+        covers = data.get("cover") or {}
+        cover_url = covers.get("large") or covers.get("medium") or covers.get("small") or ""
+        if cover_url:
+            cover_url = cover_url.replace("http://", "https://")
+
+        notes = data.get("notes") or ""
+        description = notes.get("value", "") if isinstance(notes, dict) else str(notes)
+
+        return BookData(
+            title=data.get("title") or "",
+            authors=authors,
+            description=description[:2000],
+            publish_date=pub_date_norm,
+            isbn_10=isbn,
+            page_count=data.get("number_of_pages") or 0,
+            cover_url=cover_url,
+            source="open_library",
+        )
