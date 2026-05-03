@@ -266,3 +266,74 @@ class NotionClient:
 
         log.info(f"✓ Notion atualizado: {updated_fields}")
         return True, updated_fields
+
+
+# ============================================================
+# GOOGLE BOOKS CLIENT
+# ============================================================
+
+
+class GoogleBooksClient:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    def search_by_isbn(self, isbn: str) -> Optional[BookData]:
+        log.info(f"Google Books: buscando por ISBN {isbn}")
+        resp = http_request(
+            "GET",
+            f"{GOOGLE_BOOKS_BASE}/volumes",
+            params={"q": f"isbn:{isbn}", "key": self.api_key},
+        )
+        time.sleep(GOOGLE_BOOKS_DELAY)
+        if not resp or resp.get("totalItems", 0) == 0 or not resp.get("items"):
+            log.info("Google Books: nenhum resultado por ISBN")
+            return None
+        return self._parse(resp["items"][0]["volumeInfo"])
+
+    def search_by_title(self, title: str) -> Optional[BookData]:
+        log.info(f"Google Books: buscando por título '{title}'")
+        resp = http_request(
+            "GET",
+            f"{GOOGLE_BOOKS_BASE}/volumes",
+            params={"q": f'intitle:"{title}"', "key": self.api_key},
+        )
+        time.sleep(GOOGLE_BOOKS_DELAY)
+        if not resp or resp.get("totalItems", 0) == 0 or not resp.get("items"):
+            log.info("Google Books: nenhum resultado por título")
+            return None
+        return self._parse(resp["items"][0]["volumeInfo"])
+
+    def _parse(self, vi: dict) -> BookData:
+        identifiers = vi.get("industryIdentifiers") or []
+        isbn_10 = next((i["identifier"] for i in identifiers if i["type"] == "ISBN_10"), "")
+        isbn_13 = next((i["identifier"] for i in identifiers if i["type"] == "ISBN_13"), "")
+
+        images = vi.get("imageLinks") or {}
+        raw_url = (
+            images.get("extraLarge")
+            or images.get("large")
+            or images.get("medium")
+            or images.get("thumbnail")
+            or images.get("smallThumbnail")
+            or ""
+        )
+        cover_url = raw_url.replace("http://", "https://").replace("&edge=curl", "") if raw_url else ""
+
+        pub_date = vi.get("publishedDate") or ""
+        if len(pub_date) == 4:
+            pub_date += "-01-01"
+        elif len(pub_date) == 7:
+            pub_date += "-01"
+
+        authors = ", ".join(vi.get("authors") or []) or "Autor Desconhecido"
+
+        return BookData(
+            title=vi.get("title") or "",
+            authors=authors,
+            description=(vi.get("description") or "")[:2000],
+            publish_date=pub_date,
+            isbn_10=isbn_10 or isbn_13,
+            page_count=vi.get("pageCount") or 0,
+            cover_url=cover_url,
+            source="google_books",
+        )
