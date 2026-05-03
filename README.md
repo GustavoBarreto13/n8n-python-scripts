@@ -26,6 +26,12 @@ Sincronização bidirecional entre TickTick e a database "Tasks" do Notion. Oper
 
 **Trigger**: projeto n8n `FoPcj3MGlsL6FVB5`
 
+### `nami_finance_agent`
+
+Extrai transações financeiras de texto ou áudio via API do Gemini (incorporando a personalidade da Nami de One Piece) e registra na database "Transações" do Notion.
+
+**Trigger**: workflow `Nami Finance Agent` (`UyRklhswVdxJwy22`)
+
 ### `lucy_digest` *(em desenvolvimento)*
 
 Processa emails do Gmail com a personalidade da Lucy (Cyberpunk Edgerunners) e envia digest diário pro Telegram.
@@ -46,6 +52,8 @@ n8n-python-scripts/
 ├── ticktick_notion_sync/
 │   ├── main.py
 │   └── get_token.py        ← gera tokens OAuth do TickTick localmente
+├── nami_finance_agent/
+│   └── main.py
 └── lucy_digest/
     └── main.py
 ```

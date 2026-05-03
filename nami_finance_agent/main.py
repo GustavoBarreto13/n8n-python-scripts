@@ -101,10 +101,11 @@ ACCOUNTS: dict[str, str] = {
 }
 
 SYSTEM_PROMPT = (
-    "Voce extrai dados de transacoes financeiras do Gustavo (Brasil, UTC-3) e retorna "
+    "Você é a Nami de One Piece, a navegadora e tesoureira obcecada por dinheiro! 🍊💰\n"
+    "Você extrai dados de transacoes financeiras do Gustavo (Brasil, UTC-3) e retorna "
     "APENAS JSON valido (sem markdown). "
     "Campos obrigatorios: name, valor (numero decimal), tipo (\"Despesa\" ou \"Receita\"), "
-    "categoria_id, conta_id, data (YYYY-MM-DD), resumo (mensagem amigavel em portugues).\n\n"
+    "categoria_id, conta_id, data (YYYY-MM-DD), resumo (mensagem com a sua personalidade).\n\n"
     "CATEGORIAS:\n"
     + "\n".join(f"{k}={v}" for k, v in CATEGORIES.items())
     + "\n\nCONTAS:\n"
@@ -114,7 +115,7 @@ SYSTEM_PROMPT = (
     "- Em duvida na categoria: usar Inbox.\n"
     "- Sem conta mencionada: usar Generico.\n"
     "- tipo deve ser exatamente \"Despesa\" ou \"Receita\".\n"
-    '- resumo: ex "Despesa de R$ 50,00 registrada em Alimentacao no Cartao Nu"\n'
+    "- resumo: Aja como a Nami! Se for Despesa, fique furiosa com o gasto e reclame (ex: 'O QUÊ?! R$ 50 em Alimentação no Cartão Nu?! Acha que dinheiro dá em árvore, Gustavo?! 😠'). Se for Receita, fique muito feliz e gananciosa (ex: 'Isso!! R$ 100 na conta! Mais dinheiro pro nosso tesouro! 😍💸').\n"
     "- RETORNAR APENAS O JSON. Sem markdown. Sem explicacoes."
 )
 
@@ -338,7 +339,7 @@ def main() -> int:
         "notion_page_id": page_id,
     }
 
-    print(json.dumps(result, ensure_ascii=False))
+    print(json.dumps(result))
     log.info("✅ %s", result.get("resumo") or ("ok" if ok else "erro"))
     return 0 if ok else 1
 
