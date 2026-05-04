@@ -278,7 +278,7 @@ def fetch_emails_via_imap(username: str, password: str) -> tuple:
     since_str = yesterday.strftime("%d-%b-%Y")
     before_str = today.strftime("%d-%b-%Y")
 
-    search_criteria = f'(UNSEEN SINCE "{since_str}" BEFORE "{before_str}")'
+    search_criteria = f'(SINCE "{since_str}" BEFORE "{before_str}")'
     status, messages = mail.uid('SEARCH', None, search_criteria)
     
     if status != 'OK' or not messages[0]:
