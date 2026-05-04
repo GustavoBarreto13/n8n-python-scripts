@@ -5,15 +5,7 @@ main.py (lucy_email_agent/main.py)
 Processa e-mails via Gemini REST API (gemini-2.0-flash) usando a persona da Lucy,
 formata um digest em HTML para envio ao Telegram e retorna os dados estruturados.
 
-Uso:
-    python3 main.py --emails-json '[{"emailId":"123","subject":"..."}]'
-    python3 main.py --emails-json "..." -v
-
-Saída: JSON em uma linha no stdout. Logs no stderr.
-
-Variáveis de ambiente:
-    GEMINI_API_KEY          - obrigatório
-    GEMINI_MODEL            - opcional (default: gemini-2.0-flash)
+Agora gerencia completamente as Labels e Arquivamento via IMAP!
 """
 
 import argparse
@@ -33,7 +25,6 @@ from email.header import decode_header
 import requests
 
 def _load_dotenv() -> None:
-    """Load key=value pairs from /home/node/scripts/.env into os.environ."""
     env_path = Path(__file__).parent.parent / ".env"
     try:
         with open(env_path) as f:
@@ -48,16 +39,15 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-# ============================================================
-# CONFIG
-# ============================================================
-
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_DELAY = 0.5
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2.0
 
 CATEGORY_EMOJIS = {
+    "Security": "🛡️",
+    "Bills": "🧾",
+    "Events": "📅",
     "Promotions": "🏷️",
     "Work": "💼",
     "Finance": "💰",
@@ -66,6 +56,7 @@ CATEGORY_EMOJIS = {
     "Newsletter": "📰",
     "Social": "👥",
     "Personal": "👤",
+    "Junk": "🗑️",
     "Other": "🗂️"
 }
 
@@ -78,11 +69,11 @@ PRIORITY_COLORS = {
 SYSTEM_PROMPT = (
     "Você é Lucy — uma netrunner fria e eficiente de Night City. "
     "Você vasculha a rede toda manhã, filtra o ruído e entrega só o que importa — sem drama, sem enrolação.\n"
-    "Suas respostas de overview devem ser secas, diretas, irônicas e lacônicas.\n"
-    "Seus resumos de e-mails (summary) devem ser super curtos (1 linha máxima, sem floreio).\n"
-    "Você deve ler a lista de e-mails fornecida no prompt (JSON) e categorizar, priorizar e resumir.\n"
-    "Preserve sempre o 'emailId' original.\n"
-    "Se houver 'gmailCategory', use como sinal forte, sobrescrevendo a categoria apenas se sender/subject contradizerem claramente.\n"
+    "1. 'overview': Frase irônica e seca sobre o estado da inbox.\n"
+    "2. 'intel_briefing': Resumo consolidado de todas as Newsletters e Notícias encontradas. Junte os assuntos principais num ou dois parágrafos concisos. Se não houver notícias, deixe vazio.\n"
+    "3. 'action_items': Liste as pendências críticas do dia (boletos vencendo hoje, reuniões urgentes, alertas de segurança).\n"
+    "4. 'emails': Categorize, priorize e resuma cada e-mail (1 linha máxima). Se for inútil ou irrelevante, jogue na categoria 'Junk'.\n"
+    "Preserve sempre o 'uid' original."
 )
 
 RESPONSE_SCHEMA = {
@@ -92,15 +83,23 @@ RESPONSE_SCHEMA = {
             "type": "STRING",
             "description": "Frase seca sobre o estado da inbox hoje."
         },
+        "intel_briefing": {
+            "type": "STRING",
+            "description": "Resumo consolidado das principais notícias encontradas nas newsletters."
+        },
+        "action_items": {
+            "type": "ARRAY",
+            "items": {"type": "STRING", "description": "Ação necessária (ex: Pagar boleto, Responder chefe)"}
+        },
         "emails": {
             "type": "ARRAY",
             "items": {
                 "type": "OBJECT",
                 "properties": {
-                    "emailId": {"type": "STRING", "description": "ID original do Gmail"},
+                    "uid": {"type": "STRING", "description": "ID original da mensagem IMAP"},
                     "category": {
                         "type": "STRING",
-                        "enum": ["Work", "Finance", "Shopping", "Travel", "Newsletter", "Social", "Promotions", "Personal", "Other"]
+                        "enum": ["Security", "Bills", "Events", "Work", "Finance", "Shopping", "Travel", "Newsletter", "Social", "Promotions", "Personal", "Junk", "Other"]
                     },
                     "priority": {
                         "type": "STRING",
@@ -112,16 +111,12 @@ RESPONSE_SCHEMA = {
                         "enum": ["arquivar", "responder", "ler", "agir", "ignorar"]
                     }
                 },
-                "required": ["emailId", "category", "priority", "summary", "action"]
+                "required": ["uid", "category", "priority", "summary", "action"]
             }
         }
     },
     "required": ["overview", "emails"]
 }
-
-# ============================================================
-# LOGGING
-# ============================================================
 
 log = logging.getLogger("lucy_agent")
 _last_http_error: Optional[str] = None
@@ -140,10 +135,6 @@ def setup_logging(verbose: bool = False) -> None:
         format="%(asctime)s %(levelname)-7s %(message)s",
         datefmt="%H:%M:%S",
     )
-
-# ============================================================
-# HTTP
-# ============================================================
 
 def http_request(
     method: str,
@@ -166,33 +157,23 @@ def http_request(
             )
             if resp.status_code == 429:
                 wait = RETRY_BACKOFF * (2 ** (attempt - 1))
-                log.warning("429 — retry em %.1fs", wait)
                 time.sleep(wait)
                 continue
             if 500 <= resp.status_code < 600:
                 wait = RETRY_BACKOFF * (2 ** (attempt - 1))
-                log.warning("%d — retry em %.1fs", resp.status_code, wait)
                 time.sleep(wait)
                 continue
             if resp.status_code == 404:
-                log.debug("404 em %s", url)
                 return None
             if 400 <= resp.status_code < 500:
                 body_preview = (resp.text or "")[:500]
                 _last_http_error = f"{resp.status_code} {method}: {body_preview}"
-                log.error("%d %s %s: %s", resp.status_code, method, url, body_preview)
                 return None
             return resp.json() if resp.content else {}
         except requests.RequestException as exc:
             wait = RETRY_BACKOFF * (2 ** (attempt - 1))
-            log.warning("Erro %s — retry em %.1fs", exc, wait)
             time.sleep(wait)
-    log.error("Falha definitiva após %d tentativas", MAX_RETRIES)
     return None
-
-# ============================================================
-# GEMINI CLIENT
-# ============================================================
 
 class GeminiClient:
     BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -202,9 +183,7 @@ class GeminiClient:
 
     def process_emails(self, emails_data: list) -> Optional[dict]:
         url = f"{self.BASE}/{GEMINI_MODEL}:generateContent"
-        
         prompt = f"Categorize e resuma a seguinte lista de e-mails:\n\n{json.dumps(emails_data, ensure_ascii=False, indent=2)}"
-        
         body = {
             "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
             "contents": [{"parts": [{"text": prompt}]}],
@@ -213,37 +192,30 @@ class GeminiClient:
                 "response_schema": RESPONSE_SCHEMA
             }
         }
-        
         log.info("Chamando Gemini API (%s) para %d emails...", GEMINI_MODEL, len(emails_data))
         resp = http_request("POST", url, params={"key": self.api_key}, json_body=body)
         time.sleep(GEMINI_DELAY)
-        
         if not resp:
             log.error("Gemini retornou None: %s", get_last_http_error())
             return None
-            
         try:
             raw = resp["candidates"][0]["content"]["parts"][0]["text"].strip()
-            # Remove markdown code fences se existirem
             if raw.startswith("```"):
                 raw = re.sub(r"^```[a-z]*\n?", "", raw)
                 raw = re.sub(r"\n?```$", "", raw)
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            usage = resp.get("usageMetadata", {})
+            return {"data": parsed, "usage": usage}
         except (KeyError, IndexError, json.JSONDecodeError) as exc:
             log.error("Falha ao parsear resposta do Gemini: %s", exc)
             return None
 
-# ============================================================
-# FORMATADOR HTML
-# ============================================================
-
-def build_telegram_digest(overview: str, emails: list) -> str:
-    """Constrói a string HTML para o Telegram baseada no padrão estabelecido."""
-    
-    # Agrupa e-mails por categoria
+def build_telegram_digest(overview: str, intel_briefing: str, action_items: list, emails: list, usage: dict) -> str:
     grouped = {}
     for em in emails:
         cat = em.get("category", "Other")
+        if cat == "Junk":
+            continue
         if cat not in grouped:
             grouped[cat] = []
         grouped[cat].append(em)
@@ -251,41 +223,46 @@ def build_telegram_digest(overview: str, emails: list) -> str:
     lines = []
     lines.append("🕸️ <b>LUCY — Net Scan Matinal</b>")
     lines.append("━━━━━━━━━━━━━━━━━━")
-    lines.append("")
-    lines.append(overview)
+    lines.append(f"<i>\"{overview}\"</i>")
     lines.append("")
     
-    # Ordenar categorias para exibir: Work primeiro, Promotions/Other no fim, etc.
-    # Mas iteramos pelo que foi detectado:
+    if intel_briefing:
+        lines.append("🌐 <b>INTEL BRIEFING:</b>")
+        lines.append(intel_briefing)
+        lines.append("")
+        
+    if action_items:
+        lines.append("🚨 <b>AÇÃO IMEDIATA:</b>")
+        for act in action_items:
+            lines.append(f"• {act}")
+        lines.append("")
+    
     for cat, items in grouped.items():
         emoji = CATEGORY_EMOJIS.get(cat, "🗂️")
         lines.append(f"{emoji} <b>{cat}</b> ({len(items)})")
-        
         for item in items:
             prio = item.get("priority", "low")
             color = PRIORITY_COLORS.get(prio, "🟢")
             summary = item.get("summary", "")
-            
-            # Escape HTML básico no resumo
             summary = summary.replace("<", "&lt;").replace(">", "&gt;")
-            
             lines.append(f"  {color} {summary}")
         lines.append("")
     
     lines.append("━━━━━━━━━━━━━━━━━━")
     
-    # Fuso horário BRT (UTC-3)
+    in_tokens = usage.get("promptTokenCount", 0)
+    out_tokens = usage.get("candidatesTokenCount", 0)
+    cost = (in_tokens / 1_000_000) * 0.10 + (out_tokens / 1_000_000) * 0.40
+    
+    lines.append(f"🧠 Tokens: {in_tokens:,} in | {out_tokens:,} out")
+    lines.append(f"💸 Custo: ~${cost:.5f}")
+    
     hora_atual = (datetime.now(timezone.utc) - timedelta(hours=3)).strftime("%H:%M")
     lines.append(f"🕗 {hora_atual}")
     
     return "\n".join(lines)
 
-
-# ============================================================
-# IMAP FETCH
-# ============================================================
-
-def fetch_emails_via_imap(username: str, password: str) -> list:
+def fetch_emails_via_imap(username: str, password: str) -> tuple:
     log.info("Conectando ao IMAP (%s)...", username)
     try:
         mail = imaplib.IMAP4_SSL('imap.gmail.com')
@@ -293,54 +270,33 @@ def fetch_emails_via_imap(username: str, password: str) -> list:
         mail.select('inbox')
     except Exception as exc:
         log.error("Falha ao conectar no IMAP: %s", exc)
-        return []
+        return None, []
 
-    status, messages = mail.search(None, 'UNSEEN')
-    if status != 'OK' or not messages[0]:
-        mail.logout()
-        return []
+    # E-mails de exatamente ontem
+    yesterday = datetime.now() - timedelta(days=1)
+    today = datetime.now()
+    since_str = yesterday.strftime("%d-%b-%Y")
+    before_str = today.strftime("%d-%b-%Y")
 
-    email_ids = messages[0].split()
+    search_criteria = f'(UNSEEN SINCE "{since_str}" BEFORE "{before_str}")'
+    status, messages = mail.uid('SEARCH', None, search_criteria)
     
-    # Limitar aos últimos 50 e-mails para não sobrecarregar o Gemini e não dar timeout
-    # (Pois 7000+ e-mails travam a thread do n8n)
-    if len(email_ids) > 50:
-        log.warning("Muitos e-mails não lidos (%d). Limitando aos últimos 50.", len(email_ids))
-        email_ids = email_ids[-50:]
+    if status != 'OK' or not messages[0]:
+        return mail, []
+
+    email_uids = messages[0].split()
+    
+    if len(email_uids) > 50:
+        log.warning("Muitos e-mails ontem (%d). Limitando aos 50 mais recentes.", len(email_uids))
+        email_uids = email_uids[-50:]
         
     emails_data = []
-    
-    log.info("Encontrados %d e-mails não lidos. Fazendo o parsing...", len(email_ids))
+    log.info("Encontrados %d e-mails de ontem. Fazendo o parsing...", len(email_uids))
 
-    for num in email_ids:
-        # Fetch com suporte às extensões do Gmail (MSGID e LABELS)
-        status, data = mail.fetch(num, '(X-GM-MSGID X-GM-LABELS RFC822)')
+    for uid in email_uids:
+        status, data = mail.uid('FETCH', uid, '(RFC822)')
         if status != 'OK':
             continue
-
-        response_header = data[0][0].decode('utf-8', errors='ignore')
-        
-        # Converter X-GM-MSGID (decimal) para Hex (API do Gmail)
-        msg_id_match = re.search(r'X-GM-MSGID\s+(\d+)', response_header)
-        email_id = ""
-        if msg_id_match:
-            email_id = hex(int(msg_id_match.group(1)))[2:]
-        else:
-            email_id = num.decode('utf-8')
-
-        # Extrair categoria do Gmail
-        labels_match = re.search(r'X-GM-LABELS\s+\((.*?)\)', response_header)
-        gmail_category = "Other"
-        if labels_match:
-            labels = labels_match.group(1)
-            if "CATEGORY_PROMOTIONS" in labels:
-                gmail_category = "Promotions"
-            elif "CATEGORY_SOCIAL" in labels:
-                gmail_category = "Social"
-            elif "CATEGORY_UPDATES" in labels:
-                gmail_category = "Newsletter"
-            elif "CATEGORY_PERSONAL" in labels:
-                gmail_category = "Personal"
 
         raw_email = data[0][1]
         msg = email.message_from_bytes(raw_email)
@@ -381,7 +337,6 @@ def fetch_emails_via_imap(username: str, password: str) -> list:
             for part in msg.walk():
                 content_type = part.get_content_type()
                 content_disposition = str(part.get("Content-Disposition"))
-
                 if "attachment" not in content_disposition:
                     if content_type == "text/plain":
                         payload = part.get_payload(decode=True)
@@ -397,30 +352,56 @@ def fetch_emails_via_imap(username: str, password: str) -> list:
             payload = msg.get_payload(decode=True)
             if payload:
                 body = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
-        # Removemos excesso de whitespace para economizar tokens
-        full_text = " ".join(body.split())
         
-        # Guardamos um snippet curto (para display se precisar)
+        full_text = " ".join(body.split())
         snippet = full_text[:200]
 
         emails_data.append({
-            "emailId": email_id,
+            "uid": uid.decode('utf-8'),
             "subject": subject,
             "from": from_,
             "snippet": snippet,
-            "full_body": full_text,
-            "gmailCategory": gmail_category
+            "full_body": full_text
         })
 
-    mail.logout()
-    return emails_data
+    return mail, emails_data
 
-# ============================================================
-# MAIN
-# ============================================================
+def archive_and_label_emails(mail, processed_emails):
+    imap_label_map = {
+        "Promotions": "CATEGORY_PROMOTIONS",
+        "Social": "CATEGORY_SOCIAL",
+        "Personal": "CATEGORY_PERSONAL",
+        "Work": '"Work"',
+        "Newsletter": '"Newsletter"',
+        "Finance": '"Finance"',
+        "Shopping": '"Shopping"',
+        "Travel": '"Travel"',
+        "Security": '"Security"',
+        "Bills": '"Bills"',
+        "Events": '"Events"',
+        "Junk": '"Junk"',
+        "Other": '"Other"'
+    }
+
+    log.info("Iniciando aplicação de labels e arquivamento via IMAP...")
+    for em in processed_emails:
+        uid = em.get("uid")
+        if not uid:
+            continue
+            
+        uid_bytes = uid.encode('utf-8')
+        cat = em.get("category", "Other")
+        
+        label = imap_label_map.get(cat)
+        if label:
+            mail.uid('STORE', uid_bytes, '+X-GM-LABELS', label)
+            
+        # Archive (Remove \Inbox label)
+        mail.uid('STORE', uid_bytes, '-X-GM-LABELS', '\\Inbox')
+        
+    log.info("Processo de arquivamento concluído.")
 
 def main() -> int:
-    # Força stdout para UTF-8 (útil para Windows/Powershell)
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
 
@@ -432,26 +413,23 @@ def main() -> int:
     
     gemini_key = os.getenv("GEMINI_API_KEY")
     if not gemini_key:
-        err = "Variável GEMINI_API_KEY ausente no .env"
-        log.error(err)
-        print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+        log.error("Variável GEMINI_API_KEY ausente no .env")
+        print(json.dumps({"ok": False, "error": "GEMINI_API_KEY ausente"}, ensure_ascii=False))
         return 1
 
     gmail_user = os.getenv("GMAIL_USERNAME")
     gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
     if not gmail_user or not gmail_pass:
-        err = "Variáveis GMAIL_USERNAME e GMAIL_APP_PASSWORD ausentes no .env"
-        log.error(err)
-        print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+        log.error("Variáveis GMAIL_USERNAME e GMAIL_APP_PASSWORD ausentes")
+        print(json.dumps({"ok": False, "error": "Credenciais Gmail ausentes"}, ensure_ascii=False))
         return 1
 
-    emails_data = fetch_emails_via_imap(gmail_user, gmail_pass)
+    mail, emails_data = fetch_emails_via_imap(gmail_user, gmail_pass)
 
-    # Trata caso de inbox vazia
     if not emails_data:
-        log.info("Nenhum e-mail encontrado. Pulando chamada de IA.")
-        overview = "🌙 Inbox limpa. Até parece Night City numa segunda de manhã."
-        digest_html = build_telegram_digest(overview, [])
+        log.info("Nenhum e-mail de ontem encontrado.")
+        overview = "🌙 A rede estava quieta ontem. Nada de novo na inbox."
+        digest_html = build_telegram_digest(overview, "", [], [], {})
         result = {
             "ok": True,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -459,22 +437,32 @@ def main() -> int:
             "emails": []
         }
         print(json.dumps(result, ensure_ascii=False))
+        if mail:
+            mail.logout()
         return 0
 
     gemini = GeminiClient(gemini_key)
     ai_result = gemini.process_emails(emails_data)
     
-    if not ai_result:
-        err = "Falha ao processar e-mails com Gemini"
-        print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+    if not ai_result or "data" not in ai_result:
+        print(json.dumps({"ok": False, "error": "Falha no Gemini"}, ensure_ascii=False))
+        if mail:
+            mail.logout()
         return 1
 
-    overview = ai_result.get("overview", "")
-    processed_emails = ai_result.get("emails", [])
+    overview = ai_result["data"].get("overview", "")
+    intel_briefing = ai_result["data"].get("intel_briefing", "")
+    action_items = ai_result["data"].get("action_items", [])
+    processed_emails = ai_result["data"].get("emails", [])
+    usage = ai_result.get("usage", {})
     
     log.info("Recebido do Gemini: %d e-mails categorizados.", len(processed_emails))
 
-    digest_html = build_telegram_digest(overview, processed_emails)
+    if mail:
+        archive_and_label_emails(mail, processed_emails)
+        mail.logout()
+
+    digest_html = build_telegram_digest(overview, intel_briefing, action_items, processed_emails, usage)
 
     result = {
         "ok": True,

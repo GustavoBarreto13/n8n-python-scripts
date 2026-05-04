@@ -19,14 +19,14 @@ A inteligência e o processamento de e-mails estão inteiramente isolados no scr
 1.  **Schedule Trigger**: Acorda o fluxo (ex: 8:00 AM).
 2.  **Lucy Agent Python Script (Code Node)**: Executa o `/home/node/scripts/lucy_email_agent/main.py`.
     * O script se conecta ao IMAP do Gmail.
-    * Busca e-mails marcados como `UNREAD`.
+    * Busca e-mails do **dia anterior**.
     * Consulta o Gemini 2.0 Flash para classificação e resumo.
-    * Gera a mensagem formatada para o Telegram.
+    * Aplica as **Labels** e **Arquiva** os e-mails na própria conexão IMAP.
+    * Gera a mensagem formatada para o Telegram (agora com tokens e custos inclusos).
     * Retorna os dados estruturados no stdout.
 3.  **Send Morning Digest (Telegram Node)**: Envia o texto de `{{ $json.digest_html }}`.
-4.  **Split Emails for Labeling (Code Node)**: Itera sobre o array `emails` devolvido pelo Python, gerando itens separados para cada e-mail com a categoria resolvida para a ID de label do Gmail.
-5.  **Gmail (Add Category Label)**: Aplica as labels no e-mail real.
-6.  **Gmail (Archive Email)**: Remove o e-mail da Inbox, finalizando o loop.
+
+E FIM! O Python assumiu toda a lógica que antes era de nós nativos do n8n.
 
 ---
 
@@ -41,12 +41,10 @@ O Code Node "Lucy Agent Python Script" usa o seguinte código:
 ```javascript
 const { spawnSync } = require('child_process');
 
-const emailsPayload = JSON.stringify($json.emails || []);
-
 const proc = spawnSync(
   '/opt/venv/bin/python3',
-  ['/home/node/scripts/lucy_email_agent/main.py', '--emails-json', emailsPayload, '-v'],
-  { encoding: 'utf8', timeout: 60000 }
+  ['/home/node/scripts/lucy_email_agent/main.py', '-v'],
+  { encoding: 'utf8', timeout: 120000 }
 );
 
 if (proc.error) throw proc.error;
@@ -67,7 +65,7 @@ O script devolve no `stdout` um JSON estruturado:
   "digest_html": "🕸️ <b>LUCY — Net Scan Matinal</b>\n...",
   "emails": [
     {
-      "emailId": "19db1b8e02b9308b",
+      "uid": "19db1b8e02b9308b",
       "category": "Promotions",
       "priority": "low",
       "summary": "Oferta irrelevante de crédito.",
@@ -83,9 +81,9 @@ O script devolve no `stdout` um JSON estruturado:
 
 | Serviço | Tipo | Configuração |
 |---|---|---|
-| **Gmail OAuth2** | Credencial n8n | Necessário para Fetch, Add Label e Archive |
 | **Telegram Bot** | Credencial n8n | Necessário para Send Morning Digest |
 | **Gemini API** | Variável de Ambiente | `GEMINI_API_KEY` deve estar configurada no `.env` ou nas variáveis do Dokploy |
+| **Gmail IMAP** | Variável de Ambiente | `GMAIL_USERNAME` e `GMAIL_APP_PASSWORD` configuradas no `.env` |
 
 ### Gmail OAuth2 — Google Cloud setup
 1. Criar projeto em [console.cloud.google.com](https://console.cloud.google.com)
@@ -108,12 +106,14 @@ A chave deve ser gerada no [Google AI Studio](https://aistudio.google.com/apikey
 
 ## Gmail Labels
 
-O workflow aplica labels por categoria após o envio. As labels precisam existir no Gmail e ter os IDs mapeados no node **Add Category Label**.
+O script aplica as labels por categoria via comandos IMAP nativos antes de enviar a resposta ao n8n. As labels **precisam** existir na sua conta Gmail.
 
-### Categorias do Script → Labels
-`Work` | `Finance` | `Shopping` | `Travel` | `Newsletter` | `Social` | `Promotions` | `Personal` | `Other`
+### Categorias do Script → Labels do Gmail
+`Security` | `Bills` | `Events` | `Work` | `Finance` | `Shopping` | `Travel` | `Newsletter` | `Other`
 
-*Nota:* `Promotions` costuma ser `CATEGORY_PROMOTIONS` por padrão no Gmail.
+*Nota 1:* As labels sistêmicas (`Promotions`, `Social`, `Personal`) são setadas como `CATEGORY_PROMOTIONS` via IMAP.
+*Nota 2:* E-mails que a Lucy considerar inúteis caem na categoria `Junk`. Eles são omitidos do Telegram e recebem a label "Junk", além de serem imediatamente arquivados.
+*Nota 3:* Após aplicar a Label, o script automaticamente remove a tag `\Inbox`, o que efetiva o **Archive** do e-mail no Gmail.
 
 ---
 
@@ -122,6 +122,9 @@ O workflow aplica labels por categoria após o envio. As labels precisam existir
 > *"Você é Lucy — uma netrunner fria e eficiente de Night City. Você vasculha a rede toda manhã, filtra o ruído e entrega só o que importa — sem drama, sem enrolação."*
 
 - **Summaries**: super curtos, 1 linha máxima, sem floreio.
+- **Intel Briefing**: Um compilado geral de todas as notícias encontradas no dia.
+- **Action Items**: Alertas críticos colocados em evidência no Telegram (faturas, urgências, acessos suspeitos).
+- **Junk Filtering**: Lixo é agrupado e escondido, arquivado silenciosamente.
 - **Overview**: irônico e lacônico.
 - **Inbox zerada**: O script detecta automaticamente se o input for vazio e retorna `🌙 Inbox limpa. Até parece Night City numa segunda de manhã.` sem gastar token da IA.
 
