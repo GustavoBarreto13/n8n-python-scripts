@@ -12,21 +12,21 @@ Workflow n8n que roda todo dia às 8h (America/Sao_Paulo), lê a inbox do Gmail,
 - **URL:** `https://n8n.gusstavo42-vps.cloud/workflow/FXeSRs23jMJvIUuj`
 - **Status:** Inativo (aguardando credenciais)
 
-O fluxo substituiu nodes pesados de IA (do `@n8n/n8n-nodes-langchain`) por uma chamada otimizada ao script `main.py` via `spawnSync`, garantindo consistência com os outros módulos do repositório.
+## A Arquitetura do Workflow
 
-### Nodes em ordem
+A inteligência e o processamento de e-mails estão inteiramente isolados no script Python `main.py`. O n8n age apenas como orquestrador e entregador de mensagens.
 
-```
-Schedule (8h)
-  → Fetch Unread Inbox Emails   (Gmail: getAll, INBOX + unread)
-  → Aggregate All Emails        (agrega itens em lista única)
-  → Prepare Emails for AI       (extrai emailId, from, subject, snippet, gmailCategory)
-  → Lucy Agent Python Script    (Code Node chama main.py via spawnSync)
-  → Send Morning Digest         (Telegram: envia o digest_html)
-  → Split Emails for Labeling   (expande o array de e-mails processado)
-  → Add Category Label          (Gmail: aplica label baseada no ID retornado)
-  → Archive Email               (Gmail: remove INBOX label)
-```
+1.  **Schedule Trigger**: Acorda o fluxo (ex: 8:00 AM).
+2.  **Lucy Agent Python Script (Code Node)**: Executa o `/home/node/scripts/lucy_email_agent/main.py`.
+    * O script se conecta ao IMAP do Gmail.
+    * Busca e-mails marcados como `UNREAD`.
+    * Consulta o Gemini 2.0 Flash para classificação e resumo.
+    * Gera a mensagem formatada para o Telegram.
+    * Retorna os dados estruturados no stdout.
+3.  **Send Morning Digest (Telegram Node)**: Envia o texto de `{{ $json.digest_html }}`.
+4.  **Split Emails for Labeling (Code Node)**: Itera sobre o array `emails` devolvido pelo Python, gerando itens separados para cada e-mail com a categoria resolvida para a ID de label do Gmail.
+5.  **Gmail (Add Category Label)**: Aplica as labels no e-mail real.
+6.  **Gmail (Archive Email)**: Remove o e-mail da Inbox, finalizando o loop.
 
 ---
 
@@ -129,8 +129,26 @@ O workflow aplica labels por categoria após o envio. As labels precisam existir
 
 ## Checklist de ativação
 
-- [ ] Configurar credencial Gmail OAuth2 no n8n
-- [ ] Configurar `GEMINI_API_KEY` no Dokploy (variáveis do container)
+- ### 2. Configurar Variáveis de Ambiente
+
+O container n8n precisa ter acesso às credenciais para que o script `main.py` consiga ler o Gmail e se comunicar com o Gemini. Adicione ao `.env` do seu repositório:
+
+```env
+# Gemini
+GEMINI_API_KEY=sua_chave_do_google_ai_studio
+GEMINI_MODEL=gemini-2.0-flash
+
+# Gmail (IMAP via Python)
+GMAIL_USERNAME=seu_email@gmail.com
+GMAIL_APP_PASSWORD=senha_de_app_de_16_letras
+```
+
+> **Como gerar a GMAIL_APP_PASSWORD (Senha de App):**
+> 1. Acesse sua Conta Google -> Segurança.
+> 2. Certifique-se de que a **Verificação em Duas Etapas** está ativa.
+> 3. Busque por "Senhas de App" (App Passwords).
+> 4. Crie uma senha com o nome "Lucy Agent".
+> 5. Copie a senha de 16 letras gerada (sem espaços) e cole no `.env`.
 - [ ] Configurar credencial Telegram Bot no n8n e setar o Chat ID
 - [ ] Substituir/Atualizar o node de IA nativo pelo script Python via Code node
 - [ ] Criar labels no Gmail se ainda não existirem

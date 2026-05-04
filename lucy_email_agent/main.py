@@ -26,6 +26,9 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+import imaplib
+import email
+from email.header import decode_header
 
 import requests
 
@@ -279,6 +282,125 @@ def build_telegram_digest(overview: str, emails: list) -> str:
 
 
 # ============================================================
+# IMAP FETCH
+# ============================================================
+
+def fetch_emails_via_imap(username: str, password: str) -> list:
+    log.info("Conectando ao IMAP (%s)...", username)
+    try:
+        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        mail.login(username, password)
+        mail.select('inbox')
+    except Exception as exc:
+        log.error("Falha ao conectar no IMAP: %s", exc)
+        return []
+
+    status, messages = mail.search(None, 'UNSEEN')
+    if status != 'OK' or not messages[0]:
+        mail.logout()
+        return []
+
+    email_ids = messages[0].split()
+    emails_data = []
+    
+    log.info("Encontrados %d e-mails não lidos. Fazendo o parsing...", len(email_ids))
+
+    for num in email_ids:
+        # Fetch com suporte às extensões do Gmail (MSGID e LABELS)
+        status, data = mail.fetch(num, '(X-GM-MSGID X-GM-LABELS RFC822)')
+        if status != 'OK':
+            continue
+
+        response_header = data[0][0].decode('utf-8', errors='ignore')
+        
+        # Converter X-GM-MSGID (decimal) para Hex (API do Gmail)
+        msg_id_match = re.search(r'X-GM-MSGID\s+(\d+)', response_header)
+        email_id = ""
+        if msg_id_match:
+            email_id = hex(int(msg_id_match.group(1)))[2:]
+        else:
+            email_id = num.decode('utf-8')
+
+        # Extrair categoria do Gmail
+        labels_match = re.search(r'X-GM-LABELS\s+\((.*?)\)', response_header)
+        gmail_category = "Other"
+        if labels_match:
+            labels = labels_match.group(1)
+            if "CATEGORY_PROMOTIONS" in labels:
+                gmail_category = "Promotions"
+            elif "CATEGORY_SOCIAL" in labels:
+                gmail_category = "Social"
+            elif "CATEGORY_UPDATES" in labels:
+                gmail_category = "Newsletter"
+            elif "CATEGORY_PERSONAL" in labels:
+                gmail_category = "Personal"
+
+        raw_email = data[0][1]
+        msg = email.message_from_bytes(raw_email)
+
+        # Assunto
+        subject_header = msg.get("Subject", "")
+        decoded_subject = decode_header(subject_header)
+        subject_parts = []
+        for part, encoding in decoded_subject:
+            if isinstance(part, bytes):
+                subject_parts.append(part.decode(encoding or "utf-8", errors="ignore"))
+            else:
+                subject_parts.append(str(part))
+        subject = "".join(subject_parts)
+
+        # Remetente
+        from_header = msg.get("From", "")
+        decoded_from = decode_header(from_header)
+        from_parts = []
+        for part, encoding in decoded_from:
+            if isinstance(part, bytes):
+                from_parts.append(part.decode(encoding or "utf-8", errors="ignore"))
+            else:
+                from_parts.append(str(part))
+        from_ = "".join(from_parts)
+
+        # Corpo / Snippet
+        body = ""
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                content_disposition = str(part.get("Content-Disposition"))
+
+                if "attachment" not in content_disposition:
+                    if content_type == "text/plain":
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            body = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
+                        break
+                    elif content_type == "text/html" and not body:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            html_content = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
+                            body = re.sub(r'<[^>]+>', ' ', html_content)
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                body = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
+        # Removemos excesso de whitespace para economizar tokens
+        full_text = " ".join(body.split())
+        
+        # Guardamos um snippet curto (para display se precisar)
+        snippet = full_text[:200]
+
+        emails_data.append({
+            "emailId": email_id,
+            "subject": subject,
+            "from": from_,
+            "snippet": snippet,
+            "full_body": full_text,
+            "gmailCategory": gmail_category
+        })
+
+    mail.logout()
+    return emails_data
+
+# ============================================================
 # MAIN
 # ============================================================
 
@@ -288,7 +410,6 @@ def main() -> int:
         sys.stdout.reconfigure(encoding='utf-8')
 
     parser = argparse.ArgumentParser(description="Processa inbox do Gmail via Gemini (Lucy Agent).")
-    parser.add_argument("--emails-json", required=True, help="Lista de e-mails em formato JSON")
     parser.add_argument("-v", "--verbose", action="store_true", help="Logs em nível DEBUG")
     args = parser.parse_args()
 
@@ -296,24 +417,20 @@ def main() -> int:
     
     gemini_key = os.getenv("GEMINI_API_KEY")
     if not gemini_key:
-        err = "Variável GEMINI_API_KEY ausente"
+        err = "Variável GEMINI_API_KEY ausente no .env"
         log.error(err)
         print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
         return 1
 
-    try:
-        emails_data = json.loads(args.emails_json)
-    except json.JSONDecodeError as exc:
-        err = f"Falha ao fazer parse do argumento --emails-json: {exc}"
+    gmail_user = os.getenv("GMAIL_USERNAME")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
+    if not gmail_user or not gmail_pass:
+        err = "Variáveis GMAIL_USERNAME e GMAIL_APP_PASSWORD ausentes no .env"
         log.error(err)
         print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
         return 1
 
-    if not isinstance(emails_data, list):
-        err = "--emails-json deve conter um Array JSON"
-        log.error(err)
-        print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
-        return 1
+    emails_data = fetch_emails_via_imap(gmail_user, gmail_pass)
 
     # Trata caso de inbox vazia
     if not emails_data:
