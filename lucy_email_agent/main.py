@@ -301,6 +301,13 @@ def fetch_emails_via_imap(username: str, password: str) -> list:
         return []
 
     email_ids = messages[0].split()
+    
+    # Limitar aos últimos 50 e-mails para não sobrecarregar o Gemini e não dar timeout
+    # (Pois 7000+ e-mails travam a thread do n8n)
+    if len(email_ids) > 50:
+        log.warning("Muitos e-mails não lidos (%d). Limitando aos últimos 50.", len(email_ids))
+        email_ids = email_ids[-50:]
+        
     emails_data = []
     
     log.info("Encontrados %d e-mails não lidos. Fazendo o parsing...", len(email_ids))
@@ -344,7 +351,11 @@ def fetch_emails_via_imap(username: str, password: str) -> list:
         subject_parts = []
         for part, encoding in decoded_subject:
             if isinstance(part, bytes):
-                subject_parts.append(part.decode(encoding or "utf-8", errors="ignore"))
+                enc = encoding or "utf-8"
+                try:
+                    subject_parts.append(part.decode(enc, errors="ignore"))
+                except LookupError:
+                    subject_parts.append(part.decode("utf-8", errors="ignore"))
             else:
                 subject_parts.append(str(part))
         subject = "".join(subject_parts)
@@ -355,7 +366,11 @@ def fetch_emails_via_imap(username: str, password: str) -> list:
         from_parts = []
         for part, encoding in decoded_from:
             if isinstance(part, bytes):
-                from_parts.append(part.decode(encoding or "utf-8", errors="ignore"))
+                enc = encoding or "utf-8"
+                try:
+                    from_parts.append(part.decode(enc, errors="ignore"))
+                except LookupError:
+                    from_parts.append(part.decode("utf-8", errors="ignore"))
             else:
                 from_parts.append(str(part))
         from_ = "".join(from_parts)
