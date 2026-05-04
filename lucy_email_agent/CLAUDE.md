@@ -109,11 +109,10 @@ A chave deve ser gerada no [Google AI Studio](https://aistudio.google.com/apikey
 O script aplica as labels por categoria via comandos IMAP nativos antes de enviar a resposta ao n8n. As labels **precisam** existir na sua conta Gmail.
 
 ### Categorias do Script → Labels do Gmail
-`Security` | `Bills` | `Events` | `Work` | `Finance` | `Shopping` | `Travel` | `Newsletter` | `Other`
+`Art / Hobbies` | `Finance` | `Knowledge` | `Shopping` | `Personal` | `Health` | `Security` | `Work` | `Other`
 
-*Nota 1:* As labels sistêmicas (`Promotions`, `Social`, `Personal`) são setadas como `CATEGORY_PROMOTIONS` via IMAP.
-*Nota 2:* E-mails que a Lucy considerar inúteis caem na categoria `Junk`. Eles são omitidos do Telegram e recebem a label "Junk", além de serem imediatamente arquivados.
-*Nota 3:* Após aplicar a Label, o script automaticamente remove a tag `\Inbox`, o que efetiva o **Archive** do e-mail no Gmail.
+*Nota 1:* E-mails que a Lucy considerar inúteis caem na categoria `Junk`. Eles são omitidos do Telegram e recebem a label "Junk", além de serem imediatamente arquivados.
+*Nota 2:* Após aplicar a Label, o script automaticamente remove a tag `\Inbox`, o que efetiva o **Archive** do e-mail no Gmail.
 
 ---
 

@@ -45,17 +45,14 @@ MAX_RETRIES = 3
 RETRY_BACKOFF = 2.0
 
 CATEGORY_EMOJIS = {
-    "Security": "🛡️",
-    "Bills": "🧾",
-    "Events": "📅",
-    "Promotions": "🏷️",
-    "Work": "💼",
-    "Finance": "💰",
-    "Shopping": "🛍️",
-    "Travel": "✈️",
-    "Newsletter": "📰",
-    "Social": "👥",
+    "Art / Hobbies": "🎭",
+    "Finance": "💵",
+    "Knowledge": "🎓",
+    "Shopping": "🛒",
     "Personal": "👤",
+    "Health": "⚕️",
+    "Security": "🔒",
+    "Work": "💼",
     "Junk": "🗑️",
     "Other": "🗂️"
 }
@@ -72,7 +69,18 @@ SYSTEM_PROMPT = (
     "1. 'overview': Frase irônica e seca sobre o estado da inbox.\n"
     "2. 'intel_briefing': Resumo consolidado de todas as Newsletters e Notícias encontradas. Junte os assuntos principais num ou dois parágrafos concisos. Se não houver notícias, deixe vazio.\n"
     "3. 'action_items': Liste as pendências críticas do dia (boletos vencendo hoje, reuniões urgentes, alertas de segurança).\n"
-    "4. 'emails': Categorize, priorize e resuma cada e-mail (1 linha máxima). Se for inútil ou irrelevante, jogue na categoria 'Junk'.\n"
+    "4. 'emails': Categorize, priorize e resuma cada e-mail (1 linha máxima).\n\n"
+    "DIRETRIZES DE CATEGORIZAÇÃO:\n"
+    "- Art / Hobbies: Arte, hobbies, esportes, interesses pessoais e lazer.\n"
+    "- Finance: Faturas, boletos, bancos, Pix, comprovantes e investimentos.\n"
+    "- Knowledge: Newsletters, artigos, cursos, aprendizado, blogs, newsletter no assunto ou no corpo.\n"
+    "- Shopping: Rastreio de entregas, recibos de compras, ofertas, cupons e e-commerce.\n"
+    "- Personal: E-mails diretos de pessoas (amigos, familiares), viagens, eventos sociais, voos e redes sociais.\n"
+    "- Health: Exames, resultados, médicos, farmácia, bem-estar.\n"
+    "- Security: Alertas de login, senhas, códigos de verificação, OTP e acessos novos.\n"
+    "- Work: Trabalho, chefe, clientes, corporativo.\n"
+    "- Junk: Lixo inútil, termos de uso irrelevantes, spam, promoções de lojas, cupons, marketing de vendas, LinkedIn, Instagram, notificações de redes sociais, eventos sociais. (Junk não será exibido no Telegram, então use sem dó para limpar o ruído).\n"
+    "- Other: Tudo que não couber acima.\n\n"
     "Preserve sempre o 'uid' original."
 )
 
@@ -99,7 +107,7 @@ RESPONSE_SCHEMA = {
                     "uid": {"type": "STRING", "description": "ID original da mensagem IMAP"},
                     "category": {
                         "type": "STRING",
-                        "enum": ["Security", "Bills", "Events", "Work", "Finance", "Shopping", "Travel", "Newsletter", "Social", "Promotions", "Personal", "Junk", "Other"]
+                        "enum": ["Art / Hobbies", "Finance", "Knowledge", "Shopping", "Personal", "Health", "Security", "Work", "Junk", "Other"]
                     },
                     "priority": {
                         "type": "STRING",
@@ -368,17 +376,14 @@ def fetch_emails_via_imap(username: str, password: str) -> tuple:
 
 def archive_and_label_emails(mail, processed_emails):
     imap_label_map = {
-        "Promotions": "CATEGORY_PROMOTIONS",
-        "Social": "CATEGORY_SOCIAL",
-        "Personal": "CATEGORY_PERSONAL",
-        "Work": '"Work"',
-        "Newsletter": '"Newsletter"',
+        "Art / Hobbies": '"Art / Hobbies"',
         "Finance": '"Finance"',
+        "Knowledge": '"Knowledge"',
         "Shopping": '"Shopping"',
-        "Travel": '"Travel"',
+        "Personal": '"Personal"',
+        "Health": '"Health"',
         "Security": '"Security"',
-        "Bills": '"Bills"',
-        "Events": '"Events"',
+        "Work": '"Work"',
         "Junk": '"Junk"',
         "Other": '"Other"'
     }
