@@ -32,6 +32,14 @@ Extrai transações financeiras de texto ou áudio via API do Gemini (incorporan
 
 **Trigger**: workflow `Nami Finance Agent` (`UyRklhswVdxJwy22`)
 
+### `gustavoboxd`
+
+Dois modos no mesmo workflow (`0CvDslbxVNVeg0uv`):
+- **Webhook** (`--page-id`): enriquece uma página de filme no Notion com metadados do OMDB (diretor, gênero, poster) e backdrop do TMDB, disparado pela automação do Notion ao criar uma página.
+- **Sync diário** (`--yesterday`): busca o RSS do Letterboxd, filtra filmes assistidos ontem e cria/atualiza páginas no Notion. Roda às 08:00 via Schedule Trigger.
+
+**Trigger**: workflow `GustavoBoxd — Webhook (OMDB)` (`0CvDslbxVNVeg0uv`) — Notion Webhook + Schedule (08:00)
+
 ### `lucy_digest` *(em desenvolvimento)*
 
 Processa emails do Gmail com a personalidade da Lucy (Cyberpunk Edgerunners) e envia digest diário pro Telegram.
@@ -53,6 +61,8 @@ n8n-python-scripts/
 │   ├── main.py
 │   └── get_token.py        ← gera tokens OAuth do TickTick localmente
 ├── nami_finance_agent/
+│   └── main.py
+├── gustavoboxd/
 │   └── main.py
 └── lucy_digest/
     └── main.py

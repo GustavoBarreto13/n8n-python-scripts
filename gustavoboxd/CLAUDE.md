@@ -4,11 +4,25 @@ Contexto específico do script `gustavoboxd`. Veja o `CLAUDE.md` na raiz para in
 
 ---
 
+## Workflow n8n
+
+**GustavoBoxd — Webhook (OMDB)** — ID: `0CvDslbxVNVeg0uv`
+
+Dois triggers no mesmo workflow:
+
+| Trigger | Tipo | Destino |
+|---|---|---|
+| Notion Webhook | POST `/webhook/gustavoboxd` | `Enriquecer Filme (OMDB)` |
+| Schedule Trigger | Diário às 08:00 | `Code in JavaScript` |
+
+---
+
 ## O que faz
 
-Dois modos:
-1. **Webhook** (`--page-id`): Dado o ID de uma página Notion, lê o título do filme, chama o OMDB e atualiza os metadados (diretor, gênero, poster, etc.)
-2. **Letterboxd sync** (sem args): Busca o RSS do usuário no Letterboxd, cria/atualiza páginas no banco de dados Notion com os filmes assistidos + enriquecimento via OMDB
+Dois modos operados pelo mesmo script:
+
+1. **Webhook** (`--page-id`): Dado o ID de uma página Notion, lê o título do filme, chama o OMDB e atualiza os metadados (diretor, gênero, poster, etc.). Cover da página vem do TMDB (backdrop) com fallback pro poster do OMDB.
+2. **Letterboxd sync** (`--yesterday`): Busca o RSS do usuário no Letterboxd, filtra apenas filmes com `watchedDate` = ontem, e cria/atualiza páginas no banco de dados Notion + enriquecimento via OMDB.
 
 ---
 
@@ -16,10 +30,10 @@ Dois modos:
 
 ```bash
 # Modo webhook (trigger: automação do Notion)
-/opt/venv/bin/python3 /home/node/scripts/gustavoboxd/main.py --page-id <notion-page-id>
+/opt/venv/bin/python3 /home/node/scripts/gustavoboxd/main.py --page-id <notion-page-id> -v
 
-# Modo sync (trigger: Schedule no n8n)
-/opt/venv/bin/python3 /home/node/scripts/gustavoboxd/main.py
+# Modo sync diário (trigger: Schedule às 08:00)
+/opt/venv/bin/python3 /home/node/scripts/gustavoboxd/main.py --yesterday -v
 ```
 
 ---
@@ -30,7 +44,10 @@ Dois modos:
 # Webhook: enriquece página com dados do OMDB
 python3 main.py --page-id <id>
 
-# Sync: importa últimos 50 filmes do Letterboxd
+# Sync: importa filmes assistidos ontem do Letterboxd
+python3 main.py --yesterday
+
+# Sync: importa os últimos 50 filmes (sem filtro de data)
 python3 main.py
 
 # Dry-run: loga sem escrever no Notion
@@ -97,6 +114,7 @@ Antes de criar cada entrada, o script faz uma query no banco de dados Notion fil
 | API | Endpoint | Auth | Delay |
 |---|---|---|---|
 | OMDB | `http://www.omdbapi.com` | `apikey` param | 0.3s |
+| TMDB | `https://api.themoviedb.org/3` | Bearer token v4 | 0.3s |
 | Letterboxd RSS | `https://letterboxd.com/{username}/rss/` | sem auth | — |
 | Notion | `https://api.notion.com/v1` | Bearer token | 0.4s |
 
@@ -137,7 +155,9 @@ Antes de criar cada entrada, o script faz uma query no banco de dados Notion fil
 
 ## Code nodes n8n
 
-### Webhook (trigger: Notion cria página)
+Ambos os nodes estão no workflow **`0CvDslbxVNVeg0uv`**.
+
+### `Enriquecer Filme (OMDB)` — trigger: Notion Webhook
 
 ```javascript
 const { spawnSync } = require('child_process');
@@ -155,14 +175,14 @@ result._logs = proc.stderr.slice(-3000);
 return [{ json: result }];
 ```
 
-### Sync Letterboxd (trigger: Schedule — ex: diário)
+### `Code in JavaScript` — trigger: Schedule (08:00 diário)
 
 ```javascript
 const { spawnSync } = require('child_process');
 
 const proc = spawnSync(
   '/opt/venv/bin/python3',
-  ['/home/node/scripts/gustavoboxd/main.py', '-v'],
+  ['/home/node/scripts/gustavoboxd/main.py', '--yesterday', '-v'],
   { encoding: 'utf8', timeout: 120000 }
 );
 

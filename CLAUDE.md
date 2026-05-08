@@ -157,7 +157,10 @@ import os
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")        # via OPENAPI_MCP_HEADERS
 N8N_HOST     = os.environ.get("N8N_HOST")            # n8n.gusstavo42-vps.cloud
 GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY")  # para books_sync — configurar no Dokploy
-TMDB_TOKEN         = os.environ.get("TMDB_TOKEN")          # para series_sync — Bearer token TMDB v4
+TMDB_TOKEN         = os.environ.get("TMDB_TOKEN")          # para series_sync e gustavoboxd — Bearer token TMDB v4
+OMDB_API_KEY       = os.environ.get("OMDB_API_KEY")        # para gustavoboxd — API key do OMDB
+LETTERBOXD_USERNAME = os.environ.get("LETTERBOXD_USERNAME") # para gustavoboxd — username do Letterboxd
+NOTION_DB_GUSTAVOBOXD = os.environ.get("NOTION_DB_GUSTAVOBOXD") # para gustavoboxd — ID do banco de filmes
 ```
 
 Credenciais de APIs externas devem ser passadas como argumentos pelo n8n ou lidas de env vars configuradas no Dokploy.
@@ -192,6 +195,9 @@ n8n-python-scripts/
 ├── series_sync/
 │   ├── main.py
 │   └── CLAUDE.md                    ← contexto específico do series_sync
+├── gustavoboxd/
+│   ├── main.py
+│   └── CLAUDE.md                    ← contexto específico do gustavoboxd
 └── lucy_digest/                     ← futuro
     └── main.py
 ```
@@ -210,6 +216,7 @@ n8n-python-scripts/
 | Nami Finance Agent | `UyRklhswVdxJwy22` | Telegram → Gemini → Notion 💰 Transações |
 | GustavoBooks | `YW1MqVhd6zR-ufOvrxJIR` | Webhook do Notion → busca Google Books/Open Library → atualiza página com metadados do livro |
 | Series Boxd (Python) | `QNmGcoi1Oad9s1uW` | Webhook/Schedule → series_sync/main.py → TMDB → atualiza série/temporadas/episódios no Notion |
+| GustavoBoxd — Webhook (OMDB) | `0CvDslbxVNVeg0uv` | Webhook Notion + Schedule diário (08h) → gustavoboxd/main.py → OMDB/TMDB/Letterboxd RSS → Notion |
 
 ---
 

@@ -33,7 +33,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -562,11 +562,17 @@ def run_letterboxd_sync(
     notion: NotionClient,
     omdb_key: str,
     tmdb_token: str,
+    yesterday_only: bool = False,
 ) -> dict:
     log.info(f"Modo sync: Letterboxd@{username} → Notion DB {db_id[:8]}…")
     entries = fetch_letterboxd_entries(username)
     if not entries:
         return {"ok": False, "error": "no_letterboxd_entries", "username": username}
+
+    if yesterday_only:
+        target = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+        entries = [e for e in entries if e.watched_date == target]
+        log.info(f"Filtro --yesterday ({target}): {len(entries)} entradas")
 
     stats = SyncStats()
 
@@ -630,6 +636,7 @@ def main() -> int:
         description="GustavoBoxd — enriquece filmes no Notion via OMDB e sincroniza com Letterboxd"
     )
     parser.add_argument("--page-id", help="ID da página Notion (modo webhook: enriquece um filme)")
+    parser.add_argument("--yesterday", action="store_true", help="Sync: filtra apenas filmes assistidos ontem")
     parser.add_argument("--dry-run", action="store_true", help="Loga sem escrever no Notion")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -664,7 +671,7 @@ def main() -> int:
             log.error("LETTERBOXD_USERNAME não configurado")
             print(json.dumps({"ok": False, "error": "missing_letterboxd_username"}))
             return 1
-        result = run_letterboxd_sync(username, db_id, notion, omdb_key, tmdb_token)
+        result = run_letterboxd_sync(username, db_id, notion, omdb_key, tmdb_token, yesterday_only=args.yesterday)
 
     result["dry_run"] = args.dry_run
     print(json.dumps(result, ensure_ascii=False))
