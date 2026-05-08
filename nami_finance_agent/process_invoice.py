@@ -645,6 +645,21 @@ def main() -> int:
             expanded.append({k: v for k, v in tx.items() if k != "parcelas"})
             continue
         base_name = tx.get("name", "")
+        # Faturas costumam mostrar a data da compra original — forçar base para o mês da fatura
+        if fatura_mes:
+            try:
+                fm_year, fm_month = (int(x) for x in fatura_mes.split("-"))
+                try:
+                    tx_date = datetime.strptime(tx.get("data", ""), "%Y-%m-%d")
+                    if tx_date.year != fm_year or tx_date.month != fm_month:
+                        tx = dict(tx)
+                        tx["data"] = f"{fm_year:04d}-{fm_month:02d}-01"
+                        log.debug("Data da parcela corrigida para fatura_mes: %s", tx["data"])
+                except ValueError:
+                    tx = dict(tx)
+                    tx["data"] = f"{fm_year:04d}-{fm_month:02d}-01"
+            except ValueError:
+                pass
         existing_ks = notion.find_existing_installment_indices(base_name, total)
         # criar: parcela atual (sempre) + futuras (sempre) + passadas faltantes
         ks_to_create = sorted(
