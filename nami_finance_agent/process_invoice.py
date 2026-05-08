@@ -109,6 +109,7 @@ def _make_extraction_prompt() -> str:
         "Retorne APENAS JSON válido (sem markdown) com este formato exato:\n"
         '{\n'
         '  "account": "nome da conta exatamente como nas opções abaixo",\n'
+        '  "fatura_mes": "YYYY-MM",\n'
         '  "period": {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"},\n'
         '  "transactions": [\n'
         '    {"name": "...", "valor": 0.00, "tipo": "Despesa", "data": "YYYY-MM-DD", "categoria": "...", "parcelas": {"total": 12, "atual": 3}}\n'
@@ -122,11 +123,14 @@ def _make_extraction_prompt() -> str:
         "- tipo: 'Despesa' para compras/gastos, 'Receita' para créditos/estornos/pagamentos\n"
         "- Se a conta não for reconhecida, use 'Generico'\n"
         "- Se a categoria não for reconhecida, use 'Inbox'\n"
+        "- fatura_mes: mês de referência da fatura conforme o cabeçalho/título do PDF (ex: 'Fatura de Abril/2026' → '2026-04'). É o mês que determina o vencimento/competência das cobranças. Se não encontrar explicitamente, derive do mês predominante das transações.\n"
         "- period.start = data da primeira transação, period.end = data da última\n"
-        "- Datas das transações devem estar dentro do período da fatura (mês/ano visível no PDF)\n"
-        "- Se a data no PDF tiver apenas DD/MM sem ano, use o ano do período da fatura\n"
-        "- NUNCA use anos antes de 2020 — se o ano parecer inválido, corrija pelo período da fatura\n"
-        "- PARCELAS: se a linha tiver marcador tipo '01/12', '03/06', 'Parcela 2/10', '2 de 12', incluir 'parcelas': {'total': N, 'atual': K}. O 'valor' da linha já é por parcela — manter como está. O 'name' deve ser o nome do estabelecimento SEM o sufixo '(K/N)' (Python adiciona).\n"
+        "- Datas das transações: para cada linha com apenas DD/MM (sem ano), use o ano e mês do fatura_mes para inferir o ano correto\n"
+        "- Datas de parcelas: a 'data' de uma linha parcelada é a data DESTA fatura (mês do fatura_mes), não de parcelas passadas/futuras\n"
+        "- NUNCA use anos antes de 2020 — se o ano parecer inválido, corrija pelo fatura_mes\n"
+        "- PARCELAS: marcadores comuns em fatura de cartão — 'K/N', 'PARCELAMENTO EM FAT K/N', 'PARC K/N', 'Parcela K/N', 'K DE N'. Exemplo real: 'PARCELAMENTO EM FAT 10/12 SAO PAULO' significa que esta fatura cobra a 10ª de 12 parcelas → parcelas={'total':12,'atual':10}. Incluir 'parcelas': {'total': N, 'atual': K} sempre que houver esse padrão.\n"
+        "- ATENÇÃO: K é a parcela DESTA fatura (a 'atual'). As parcelas 1..K-1 já foram cobradas em faturas ANTERIORES (datas passadas) e K+1..N serão cobradas em faturas FUTURAS. Python calcula essas datas — você só precisa retornar K, N e a data desta linha (que será atribuída à parcela K).\n"
+        "- O 'valor' da linha já é por parcela — manter como está. O 'name' deve ser o nome do estabelecimento SEM o sufixo '(K/N)' (Python adiciona). Ex: para 'PARCELAMENTO EM FAT 10/12 SAO PAULO', name='SAO PAULO' (ou nome do estabelecimento conforme aparece, sem o '10/12' nem 'PARCELAMENTO EM FAT').\n"
         "- Sem marcador de parcela: NÃO incluir o campo parcelas.\n"
         "- RETORNAR APENAS O JSON. Sem markdown. Sem explicações."
     )
@@ -287,6 +291,7 @@ class GeminiClient:
 
     def __init__(self, api_key: str) -> None:
         self.api_key = api_key
+        self.total_usage: dict = {"promptTokenCount": 0, "candidatesTokenCount": 0}
 
     def _generate(self, parts: list, timeout: int = 60) -> Optional[str]:
         url = f"{self.BASE}/{GEMINI_MODEL}:generateContent"
@@ -296,6 +301,9 @@ class GeminiClient:
         if not resp:
             log.error("Gemini retornou None: %s", get_last_http_error())
             return None
+        usage = resp.get("usageMetadata", {})
+        self.total_usage["promptTokenCount"] += usage.get("promptTokenCount", 0)
+        self.total_usage["candidatesTokenCount"] += usage.get("candidatesTokenCount", 0)
         try:
             raw = resp["candidates"][0]["content"]["parts"][0]["text"].strip()
             if raw.startswith("```"):
@@ -589,15 +597,16 @@ def main() -> int:
         return 1
 
     account = extracted.get("account", "Generico")
+    fatura_mes = extracted.get("fatura_mes", "")
     period = extracted.get("period", {})
     transactions = extracted.get("transactions", [])
     log.info(
-        "Extraídas: %d | conta: %s | período: %s → %s",
-        len(transactions), account, period.get("start"), period.get("end"),
+        "Extraídas: %d | conta: %s | fatura_mes: %s | período: %s → %s",
+        len(transactions), account, fatura_mes, period.get("start"), period.get("end"),
     )
 
     if not transactions:
-        result = {"ok": True, "added": 0, "skipped": 0, "period": period, "account": account, "transactions": []}
+        result = {"ok": True, "added": 0, "skipped": 0, "fatura_mes": fatura_mes, "period": period, "account": account, "transactions": []}
         print(json.dumps(result, ensure_ascii=False))
         return 0
 
@@ -666,6 +675,10 @@ def main() -> int:
             "categoria": tx.get("categoria"),
         })
 
+    in_tok = gemini.total_usage.get("promptTokenCount", 0)
+    out_tok = gemini.total_usage.get("candidatesTokenCount", 0)
+    cost = (in_tok / 1_000_000) * 0.10 + (out_tok / 1_000_000) * 0.40
+
     result = {
         "ok": True,
         "dry_run": args.dry_run,
@@ -673,8 +686,12 @@ def main() -> int:
         "added": len(created),
         "skipped": skipped,
         "parcelas_expanded": parcelas_expanded,
+        "fatura_mes": fatura_mes,
         "period": period,
         "account": account,
+        "tokens_in": in_tok,
+        "tokens_out": out_tok,
+        "custo_usd": round(cost, 7),
         "transactions": created,
     }
     print(json.dumps(result, ensure_ascii=False))

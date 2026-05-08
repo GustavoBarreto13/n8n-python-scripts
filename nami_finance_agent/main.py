@@ -270,6 +270,7 @@ class GeminiClient:
 
     def __init__(self, api_key: str) -> None:
         self.api_key = api_key
+        self.last_usage: dict = {}
 
     def _call(self, system_prompt: str, text: str) -> Optional[dict]:
         url = f"{self.BASE}/{GEMINI_MODEL}:generateContent"
@@ -282,6 +283,7 @@ class GeminiClient:
         if not resp:
             log.error("Gemini retornou None: %s", get_last_http_error())
             return None
+        self.last_usage = resp.get("usageMetadata", {})
         try:
             raw = resp["candidates"][0]["content"]["parts"][0]["text"].strip()
             if raw.startswith("```"):
@@ -480,6 +482,13 @@ def main() -> int:
 
     log.info("Extração: %s", tx)
 
+    in_tok = gemini.last_usage.get("promptTokenCount", 0)
+    out_tok = gemini.last_usage.get("candidatesTokenCount", 0)
+    cost = (in_tok / 1_000_000) * 0.10 + (out_tok / 1_000_000) * 0.40
+    resumo = tx.get("resumo", "")
+    if in_tok or out_tok:
+        resumo = f"{resumo}\n🧠 {in_tok:,} in | {out_tok:,} out · 💸 ~${cost:.5f}"
+
     tx_list = expand_installments(tx)
     page_ids: list[str] = []
     for sub in tx_list:
@@ -493,7 +502,7 @@ def main() -> int:
         "ok": ok,
         "dry_run": args.dry_run,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "resumo": tx.get("resumo", ""),
+        "resumo": resumo,
         "name": first.get("name"),
         "valor": first.get("valor"),
         "tipo": first.get("tipo"),
@@ -503,6 +512,9 @@ def main() -> int:
         "notion_page_id": page_ids[0] if page_ids else None,
         "notion_page_ids": page_ids,
         "parcelas_total": len(tx_list),
+        "tokens_in": in_tok,
+        "tokens_out": out_tok,
+        "custo_usd": round(cost, 7),
     }
 
     print(json.dumps(result))
