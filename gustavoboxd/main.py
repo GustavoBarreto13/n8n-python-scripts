@@ -455,6 +455,24 @@ class NotionClient:
 # ============================================================
 
 
+_RATING_STARS = {
+    0.5: "½",
+    1.0: "★",
+    1.5: "★½",
+    2.0: "★★",
+    2.5: "★★½",
+    3.0: "★★★",
+    3.5: "★★★½",
+    4.0: "★★★★",
+    4.5: "★★★★½",
+    5.0: "★★★★★",
+}
+
+
+def _rating_to_stars(rating: float) -> str:
+    return _RATING_STARS.get(rating, f"{rating:g}")
+
+
 def _multi_select(values: list[str]) -> dict:
     return {"multi_select": [{"name": v} for v in values if v]}
 
@@ -493,7 +511,7 @@ def build_letterboxd_props(entry: LetterboxdEntry) -> dict:
     if entry.year:
         props["Year"] = {"rich_text": [{"text": {"content": entry.year}}]}
     if entry.rating is not None:
-        props["Rating"] = {"number": entry.rating}
+        props["Rating"] = {"select": {"name": _rating_to_stars(entry.rating)}}
     if entry.watched_date:
         props["Date"] = {"date": {"start": entry.watched_date}}
     if entry.review:
