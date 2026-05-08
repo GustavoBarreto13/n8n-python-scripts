@@ -19,6 +19,7 @@ Variáveis de ambiente:
 """
 
 import argparse
+import base64 as _b64
 import json
 import logging
 import os
@@ -249,10 +250,35 @@ class GeminiClient:
             log.error("Falha ao parsear resposta do Gemini: %s", exc)
             return None
 
+    def _upload_pdf(self, pdf_bytes: bytes) -> Optional[str]:
+        """Faz upload do PDF via Files API e retorna o fileUri."""
+        upload_url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+        headers = {
+            "X-Goog-Upload-Protocol": "multipart",
+            "X-Goog-Api-Key": self.api_key,
+        }
+        files = {
+            "metadata": ("metadata", '{"file": {"mimeType": "application/pdf"}}', "application/json"),
+            "file": ("fatura.pdf", pdf_bytes, "application/pdf"),
+        }
+        try:
+            resp = requests.post(upload_url, headers=headers, files=files, timeout=120)
+            resp.raise_for_status()
+            uri = resp.json()["file"]["uri"]
+            log.debug("PDF enviado para Files API: %s", uri)
+            return uri
+        except Exception as exc:
+            log.error("Falha no upload do PDF: %s", exc)
+            return None
+
     def extract_from_pdf(self, pdf_base64: str) -> Optional[dict]:
-        """Extrai todas as transações do PDF via Gemini (PDF inline base64)."""
+        """Extrai todas as transações do PDF via Gemini (Files API)."""
+        pdf_bytes = _b64.b64decode(pdf_base64)
+        file_uri = self._upload_pdf(pdf_bytes)
+        if not file_uri:
+            return None
         parts = [
-            {"inlineData": {"mimeType": "application/pdf", "data": pdf_base64}},
+            {"fileData": {"mimeType": "application/pdf", "fileUri": file_uri}},
             {"text": EXTRACTION_PROMPT},
         ]
         raw = self._generate(parts, timeout=120)
@@ -400,7 +426,6 @@ def main() -> int:
             log.error(err)
             print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
             return 1
-        import base64 as _b64
         log.info("Baixando PDF do Telegram (file_id=%s)...", args.file_id)
         info = http_request("GET", f"https://api.telegram.org/bot{bot_token}/getFile",
                             params={"file_id": args.file_id})
