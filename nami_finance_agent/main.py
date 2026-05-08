@@ -20,6 +20,7 @@ Variáveis de ambiente:
 """
 
 import argparse
+import calendar
 import json
 import logging
 import os
@@ -115,9 +116,59 @@ SYSTEM_PROMPT = (
     "- Em duvida na categoria: usar Inbox.\n"
     "- Sem conta mencionada: usar Generico.\n"
     "- tipo deve ser exatamente \"Despesa\" ou \"Receita\".\n"
-    "- resumo: Aja como a Nami! Se for Despesa, fique furiosa com o gasto e reclame (ex: 'O QUÊ?! R$ 50 em Alimentação no Cartão Nu?! Acha que dinheiro dá em árvore, Gustavo?! 😠'). Se for Receita, fique muito feliz e gananciosa (ex: 'Isso!! R$ 100 na conta! Mais dinheiro pro nosso tesouro! 😍💸').\n"
+    "- PARCELAS: se o usuario mencionar parcelamento (\"parcelado em Nx\", \"N parcelas de X\", \"Nx de X\", \"N vezes de X\"), incluir o campo opcional \"parcelas\": {\"total\": N, \"atual\": 1}. O campo \"valor\" deve ser SEMPRE o valor de UMA parcela (nao o total). Exemplos:\n"
+    "  - \"12 parcelas de 10 reais\" -> valor=10, parcelas={\"total\":12,\"atual\":1}\n"
+    "  - \"120 reais parcelado em 12x\" -> valor=10, parcelas={\"total\":12,\"atual\":1}\n"
+    "  - \"300 em 3x no Cartao Nu\" -> valor=100, parcelas={\"total\":3,\"atual\":1}\n"
+    "- Sem parcelamento mencionado: NAO incluir o campo parcelas.\n"
+    "- Quando houver parcelamento E o usuario nao disser uma data especifica: \"data\" = primeiro dia do PROXIMO mes (a cobranca comeca na proxima fatura).\n"
+    "- resumo: Aja como a Nami! Se for Despesa, fique furiosa com o gasto e reclame (ex: 'O QUÊ?! R$ 50 em Alimentação no Cartão Nu?! Acha que dinheiro dá em árvore, Gustavo?! 😠'). Se for Receita, fique muito feliz e gananciosa (ex: 'Isso!! R$ 100 na conta! Mais dinheiro pro nosso tesouro! 😍💸'). Se for parcelado, comente o parcelamento (ex: '12x de R$10?! Bota no caderno, Gustavo! 😤').\n"
     "- RETORNAR APENAS O JSON. Sem markdown. Sem explicacoes."
 )
+
+
+def expand_installments(tx: dict, ks: Optional[list[int]] = None) -> list[dict]:
+    """Expande uma transação parcelada em N transações (uma por mês).
+
+    Se `tx["parcelas"]` for ausente/None, retorna [tx] sem alterações.
+    Se `ks` for fornecida, gera apenas as parcelas listadas; senão gera de
+    `atual` até `total` (inclusive).
+    """
+    parc = tx.get("parcelas")
+    if not parc:
+        return [tx]
+    try:
+        total = int(parc["total"])
+        atual = int(parc["atual"])
+    except (KeyError, TypeError, ValueError):
+        log.warning("Campo parcelas inválido: %s", parc)
+        return [{k: v for k, v in tx.items() if k != "parcelas"}]
+    if total <= 1 or atual < 1 or atual > total:
+        log.warning("Parcelas inconsistentes (total=%s atual=%s) — sem expansão", total, atual)
+        return [{k: v for k, v in tx.items() if k != "parcelas"}]
+    try:
+        base_date = datetime.strptime(tx["data"], "%Y-%m-%d")
+    except (KeyError, ValueError) as exc:
+        log.warning("Data inválida em parcelamento: %s", exc)
+        return [{k: v for k, v in tx.items() if k != "parcelas"}]
+    base_name = tx.get("name", "")
+    if ks is None:
+        ks = list(range(atual, total + 1))
+    out = []
+    for k in sorted(ks):
+        offset = k - atual
+        m_total = base_date.month - 1 + offset
+        y_off, m_idx = divmod(m_total, 12)
+        new_year = base_date.year + y_off
+        new_month = m_idx + 1
+        last_day = calendar.monthrange(new_year, new_month)[1]
+        new_day = min(base_date.day, last_day)
+        new_date = f"{new_year:04d}-{new_month:02d}-{new_day:02d}"
+        sub = {kk: vv for kk, vv in tx.items() if kk != "parcelas"}
+        sub["name"] = f"{base_name} ({k}/{total})"
+        sub["data"] = new_date
+        out.append(sub)
+    return out
 
 
 # ============================================================
@@ -429,21 +480,29 @@ def main() -> int:
 
     log.info("Extração: %s", tx)
 
-    page_id = notion.create_transaction(tx)
-    ok = bool(page_id)
+    tx_list = expand_installments(tx)
+    page_ids: list[str] = []
+    for sub in tx_list:
+        pid = notion.create_transaction(sub)
+        if pid:
+            page_ids.append(pid)
+    ok = len(page_ids) == len(tx_list)
+    first = tx_list[0]
 
     result = {
         "ok": ok,
         "dry_run": args.dry_run,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "resumo": tx.get("resumo", ""),
-        "name": tx.get("name"),
-        "valor": tx.get("valor"),
-        "tipo": tx.get("tipo"),
-        "data": tx.get("data"),
-        "categoria_id": tx.get("categoria_id"),
-        "conta_id": tx.get("conta_id"),
-        "notion_page_id": page_id,
+        "name": first.get("name"),
+        "valor": first.get("valor"),
+        "tipo": first.get("tipo"),
+        "data": first.get("data"),
+        "categoria_id": first.get("categoria_id"),
+        "conta_id": first.get("conta_id"),
+        "notion_page_id": page_ids[0] if page_ids else None,
+        "notion_page_ids": page_ids,
+        "parcelas_total": len(tx_list),
     }
 
     print(json.dumps(result))

@@ -20,6 +20,7 @@ Variáveis de ambiente:
 
 import argparse
 import base64 as _b64
+import calendar
 import json
 import logging
 import os
@@ -100,37 +101,91 @@ ACCOUNTS: dict[str, str] = {
     "Generico": "2def090ea3ca80909abadd12e5e70a61",
 }
 
-EXTRACTION_PROMPT = (
-    "Você é um assistente financeiro. Analise esta fatura/extrato de cartão de crédito.\n"
-    "Retorne APENAS JSON válido (sem markdown) com este formato exato:\n"
-    '{\n'
-    '  "account": "nome da conta exatamente como nas opções abaixo",\n'
-    '  "period": {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"},\n'
-    '  "transactions": [\n'
-    '    {"name": "...", "valor": 0.00, "tipo": "Despesa", "data": "YYYY-MM-DD", "categoria": "..."}\n'
-    '  ]\n'
-    '}\n\n'
-    "Contas disponíveis (use o nome EXATO):\n"
-    + "\n".join(f"- {k}" for k in ACCOUNTS.keys())
-    + "\n\nCategorias disponíveis (use o nome EXATO):\n"
-    + "\n".join(f"- {k}" for k in CATEGORIES.keys())
-    + "\n\nRegras:\n"
-    "- tipo: 'Despesa' para compras/gastos, 'Receita' para créditos/estornos/pagamentos\n"
-    "- Se a conta não for reconhecida, use 'Generico'\n"
-    "- Se a categoria não for reconhecida, use 'Inbox'\n"
-    "- period.start = data da primeira transação, period.end = data da última\n"
-    "- RETORNAR APENAS O JSON. Sem markdown. Sem explicações."
-)
+def _make_extraction_prompt() -> str:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return (
+        f"Você é um assistente financeiro. Hoje é {today}.\n"
+        "Analise esta fatura/extrato de cartão de crédito.\n"
+        "Retorne APENAS JSON válido (sem markdown) com este formato exato:\n"
+        '{\n'
+        '  "account": "nome da conta exatamente como nas opções abaixo",\n'
+        '  "period": {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"},\n'
+        '  "transactions": [\n'
+        '    {"name": "...", "valor": 0.00, "tipo": "Despesa", "data": "YYYY-MM-DD", "categoria": "...", "parcelas": {"total": 12, "atual": 3}}\n'
+        '  ]\n'
+        '}\n\n'
+        "Contas disponíveis (use o nome EXATO):\n"
+        + "\n".join(f"- {k}" for k in ACCOUNTS.keys())
+        + "\n\nCategorias disponíveis (use o nome EXATO):\n"
+        + "\n".join(f"- {k}" for k in CATEGORIES.keys())
+        + "\n\nRegras:\n"
+        "- tipo: 'Despesa' para compras/gastos, 'Receita' para créditos/estornos/pagamentos\n"
+        "- Se a conta não for reconhecida, use 'Generico'\n"
+        "- Se a categoria não for reconhecida, use 'Inbox'\n"
+        "- period.start = data da primeira transação, period.end = data da última\n"
+        "- Datas das transações devem estar dentro do período da fatura (mês/ano visível no PDF)\n"
+        "- Se a data no PDF tiver apenas DD/MM sem ano, use o ano do período da fatura\n"
+        "- NUNCA use anos antes de 2020 — se o ano parecer inválido, corrija pelo período da fatura\n"
+        "- PARCELAS: se a linha tiver marcador tipo '01/12', '03/06', 'Parcela 2/10', '2 de 12', incluir 'parcelas': {'total': N, 'atual': K}. O 'valor' da linha já é por parcela — manter como está. O 'name' deve ser o nome do estabelecimento SEM o sufixo '(K/N)' (Python adiciona).\n"
+        "- Sem marcador de parcela: NÃO incluir o campo parcelas.\n"
+        "- RETORNAR APENAS O JSON. Sem markdown. Sem explicações."
+    )
 
 DEDUP_PROMPT_TEMPLATE = (
     "Compare as duas listas abaixo e retorne APENAS um JSON array com as transações "
     "da lista 'extraidas' que ainda NÃO ESTÃO na lista 'existentes' do Notion.\n"
     "Use seu julgamento: considere uma transação como já existente se tiver o mesmo valor, "
     "data aproximada e nome/estabelecimento semelhante.\n"
+    "ATENÇÃO PARCELAS: se a transação extraída tiver campo 'parcelas', preserve-o no resultado — NÃO remova. "
+    "Para comparar com existentes, use o nome base (sem sufixo '(K/N)').\n"
     "Retorne APENAS o JSON array (pode ser vazio []). Sem markdown. Sem explicações.\n\n"
     "extraidas: {extracted}\n\n"
     "existentes: {existing}"
 )
+
+
+def expand_installments(tx: dict, ks: Optional[list[int]] = None) -> list[dict]:
+    """Expande uma transação parcelada em N transações (uma por mês).
+
+    Se `tx["parcelas"]` for ausente/None, retorna [tx] sem alterações.
+    Se `ks` for fornecida, gera apenas as parcelas listadas; senão gera de
+    `atual` até `total` (inclusive).
+    """
+    parc = tx.get("parcelas")
+    if not parc:
+        return [tx]
+    try:
+        total = int(parc["total"])
+        atual = int(parc["atual"])
+    except (KeyError, TypeError, ValueError):
+        log.warning("Campo parcelas inválido: %s", parc)
+        return [{k: v for k, v in tx.items() if k != "parcelas"}]
+    if total <= 1 or atual < 1 or atual > total:
+        log.warning("Parcelas inconsistentes (total=%s atual=%s) — sem expansão", total, atual)
+        return [{k: v for k, v in tx.items() if k != "parcelas"}]
+    try:
+        base_date = datetime.strptime(tx["data"], "%Y-%m-%d")
+    except (KeyError, ValueError) as exc:
+        log.warning("Data inválida em parcelamento: %s", exc)
+        return [{k: v for k, v in tx.items() if k != "parcelas"}]
+    base_name = tx.get("name", "")
+    if ks is None:
+        ks = list(range(atual, total + 1))
+    out = []
+    for k in sorted(ks):
+        offset = k - atual
+        m_total = base_date.month - 1 + offset
+        y_off, m_idx = divmod(m_total, 12)
+        new_year = base_date.year + y_off
+        new_month = m_idx + 1
+        last_day = calendar.monthrange(new_year, new_month)[1]
+        new_day = min(base_date.day, last_day)
+        new_date = f"{new_year:04d}-{new_month:02d}-{new_day:02d}"
+        sub = {kk: vv for kk, vv in tx.items() if kk != "parcelas"}
+        sub["name"] = f"{base_name} ({k}/{total})"
+        sub["data"] = new_date
+        out.append(sub)
+    return out
 
 
 # ============================================================
@@ -302,7 +357,7 @@ class GeminiClient:
             return None
         parts = [
             {"fileData": {"mimeType": "application/pdf", "fileUri": file_uri}},
-            {"text": EXTRACTION_PROMPT},
+            {"text": _make_extraction_prompt()},
         ]
         raw = self._generate(parts, timeout=300)
         if not raw:
@@ -387,6 +442,56 @@ class NotionClient:
                 break
         log.info("Transações existentes no período: %d", len(results))
         return results
+
+    def find_existing_installment_indices(self, base_name: str, total: int) -> set[int]:
+        """Retorna o conjunto de K's já existentes para um base_name+total.
+
+        Procura no DB por títulos que contenham '{base_name} (' e '/{total})'
+        e parseia o sufixo (K/N) com regex.
+        """
+        url = f"{self.BASE}/databases/{NOTION_DB_TRANSACTIONS}/query"
+        body = {
+            "filter": {
+                "and": [
+                    {"property": "Name", "title": {"contains": f"{base_name} ("}},
+                    {"property": "Name", "title": {"contains": f"/{total})"}},
+                ]
+            },
+            "page_size": 100,
+        }
+        found: set[int] = set()
+        cursor = None
+        pattern = re.compile(r"\((\d+)/(\d+)\)\s*$")
+        while True:
+            if cursor:
+                body["start_cursor"] = cursor
+            resp = http_request("POST", url, headers=self.headers, json_body=body)
+            time.sleep(NOTION_DELAY)
+            if not resp:
+                log.error("Falha ao buscar parcelas existentes: %s", get_last_http_error())
+                break
+            for page in resp.get("results", []):
+                try:
+                    title_parts = page.get("properties", {}).get("Name", {}).get("title", [])
+                    name = title_parts[0]["text"]["content"] if title_parts else ""
+                except (KeyError, IndexError, TypeError):
+                    continue
+                m = pattern.search(name)
+                if not m:
+                    continue
+                k, n = int(m.group(1)), int(m.group(2))
+                if n != total:
+                    continue
+                # confere base name (tudo antes do sufixo)
+                base_in_name = name[: m.start()].rstrip()
+                if base_in_name == base_name:
+                    found.add(k)
+            if resp.get("has_more"):
+                cursor = resp.get("next_cursor")
+            else:
+                break
+        log.debug("Parcelas existentes para '%s' (total=%d): %s", base_name, total, sorted(found))
+        return found
 
     def create_transaction(self, data: dict) -> Optional[str]:
         categoria_id = CATEGORIES.get(data.get("categoria", ""), CATEGORIES["Inbox"])
@@ -512,6 +617,41 @@ def main() -> int:
     skipped = len(transactions) - len(to_create)
     log.info("Para criar: %d | Puladas: %d", len(to_create), skipped)
 
+    # Etapa 3.5: expandir parcelas (atual + futuras + passadas faltantes)
+    expanded: list[dict] = []
+    parcelas_expanded = 0
+    for tx in to_create:
+        parc = tx.get("parcelas")
+        if not parc:
+            expanded.append(tx)
+            continue
+        try:
+            total = int(parc["total"])
+            atual = int(parc["atual"])
+        except (KeyError, TypeError, ValueError):
+            log.warning("parcelas inválido em '%s': %s", tx.get("name"), parc)
+            expanded.append({k: v for k, v in tx.items() if k != "parcelas"})
+            continue
+        if total <= 1 or atual < 1 or atual > total:
+            expanded.append({k: v for k, v in tx.items() if k != "parcelas"})
+            continue
+        base_name = tx.get("name", "")
+        existing_ks = notion.find_existing_installment_indices(base_name, total)
+        # criar: parcela atual (sempre) + futuras (sempre) + passadas faltantes
+        ks_to_create = sorted(
+            {atual}
+            | {k for k in range(atual + 1, total + 1)}
+            | {k for k in range(1, atual) if k not in existing_ks}
+        )
+        sub_list = expand_installments(tx, ks=ks_to_create)
+        log.info(
+            "Parcela '%s' %d/%d → criar Ks=%s (existentes=%s)",
+            base_name, atual, total, ks_to_create, sorted(existing_ks),
+        )
+        expanded.extend(sub_list)
+        parcelas_expanded += len(sub_list) - 1  # -1 para descontar a "atual" que já contava
+    to_create = expanded
+
     # Etapa 4: criar no Notion
     created = []
     for i, tx in enumerate(to_create, start=1):
@@ -532,6 +672,7 @@ def main() -> int:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "added": len(created),
         "skipped": skipped,
+        "parcelas_expanded": parcelas_expanded,
         "period": period,
         "account": account,
         "transactions": created,
