@@ -264,12 +264,31 @@ class GeminiClient:
         try:
             resp = requests.post(upload_url, headers=headers, files=files, timeout=120)
             resp.raise_for_status()
-            uri = resp.json()["file"]["uri"]
-            log.debug("PDF enviado para Files API: %s", uri)
-            return uri
+            file_obj = resp.json()["file"]
+            name = file_obj["name"]
+            uri = file_obj["uri"]
+            log.debug("PDF enviado para Files API: %s (name=%s)", uri, name)
         except Exception as exc:
             log.error("Falha no upload do PDF: %s", exc)
             return None
+
+        status_url = f"https://generativelanguage.googleapis.com/v1beta/{name}"
+        for attempt in range(30):
+            try:
+                s = requests.get(status_url, headers={"X-Goog-Api-Key": self.api_key}, timeout=15)
+                s.raise_for_status()
+                state = s.json().get("state")
+                log.debug("Files API state (attempt %d): %s", attempt + 1, state)
+                if state == "ACTIVE":
+                    return uri
+                if state == "FAILED":
+                    log.error("Files API marcou o arquivo como FAILED")
+                    return None
+            except Exception as exc:
+                log.warning("Erro consultando status do arquivo: %s", exc)
+            time.sleep(1)
+        log.error("Timeout esperando arquivo ficar ACTIVE")
+        return None
 
     def extract_from_pdf(self, pdf_base64: str) -> Optional[dict]:
         """Extrai todas as transações do PDF via Gemini (Files API)."""
