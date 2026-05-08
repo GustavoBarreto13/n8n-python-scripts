@@ -68,7 +68,7 @@ python3 main.py -v
 | `Name` | title | `letterboxd:filmTitle` do RSS |
 | `Year` | rich_text | `letterboxd:filmYear` do RSS |
 | `Rating` | number | `letterboxd:memberRating` (0.5–5.0) |
-| `Watched Date` | date | `letterboxd:watchedDate` (YYYY-MM-DD) |
+| `Date` | date | `letterboxd:watchedDate` (YYYY-MM-DD) |
 | `Letterboxd URL` | url | `<link>` do item RSS — usado como chave de dedup |
 | `Review` | rich_text | `<description>` sem HTML (truncado em 2000 chars) |
 
@@ -191,6 +191,6 @@ O banco precisa ter as seguintes propriedades criadas manualmente:
 | `Released Date` | Date |
 | `Poster` | Files & media |
 | `Rating` | Number |
-| `Watched Date` | Date |
+| `Date` | Date |
 | `Letterboxd URL` | URL |
 | `Review` | Text |

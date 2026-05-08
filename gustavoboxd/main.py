@@ -63,10 +63,13 @@ _load_dotenv()
 NOTION_VERSION = "2022-06-28"
 NOTION_BASE = "https://api.notion.com/v1"
 OMDB_BASE = "http://www.omdbapi.com"
+TMDB_BASE = "https://api.themoviedb.org/3"
+TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w1280"
 LETTERBOXD_RSS = "https://letterboxd.com/{username}/rss/"
 
 NOTION_DELAY = 0.4
 OMDB_DELAY = 0.3
+TMDB_DELAY = 0.3
 
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2.0
@@ -270,6 +273,40 @@ def omdb_fetch(title: str, year: str, api_key: str) -> Optional[MovieData]:
 
 
 # ============================================================
+# TMDB CLIENT
+# ============================================================
+
+
+def tmdb_fetch_backdrop(title: str, year: str, token: str) -> str:
+    """Returns a horizontal backdrop URL from TMDB, or empty string if not found."""
+    headers = {"Authorization": f"Bearer {token}"}
+    params: dict = {"query": title, "language": "en-US", "page": 1}
+    if year:
+        params["year"] = year
+
+    log.info(f"TMDB: buscando backdrop para '{title}'" + (f" ({year})" if year else ""))
+    data = http_request("GET", f"{TMDB_BASE}/search/movie", headers=headers, params=params)
+    time.sleep(TMDB_DELAY)
+
+    if not data:
+        return ""
+
+    results = data.get("results") or []
+    if not results:
+        log.debug(f"TMDB: nenhum resultado para '{title}'")
+        return ""
+
+    backdrop = results[0].get("backdrop_path") or ""
+    if not backdrop:
+        log.debug(f"TMDB: sem backdrop para '{title}'")
+        return ""
+
+    url = f"{TMDB_IMAGE_BASE}{backdrop}"
+    log.debug(f"TMDB: backdrop encontrado → {url}")
+    return url
+
+
+# ============================================================
 # LETTERBOXD RSS PARSER
 # ============================================================
 
@@ -458,7 +495,7 @@ def build_letterboxd_props(entry: LetterboxdEntry) -> dict:
     if entry.rating is not None:
         props["Rating"] = {"number": entry.rating}
     if entry.watched_date:
-        props["Watched Date"] = {"date": {"start": entry.watched_date}}
+        props["Date"] = {"date": {"start": entry.watched_date}}
     if entry.review:
         props["Review"] = {"rich_text": [{"text": {"content": entry.review}}]}
     return props
@@ -469,7 +506,7 @@ def build_letterboxd_props(entry: LetterboxdEntry) -> dict:
 # ============================================================
 
 
-def run_webhook(page_id: str, notion: NotionClient, omdb_key: str) -> dict:
+def run_webhook(page_id: str, notion: NotionClient, omdb_key: str, tmdb_token: str) -> dict:
     log.info(f"Modo webhook: enriquecendo página {page_id}")
     page = notion.get_page(page_id)
     if not page:
@@ -486,7 +523,8 @@ def run_webhook(page_id: str, notion: NotionClient, omdb_key: str) -> dict:
     if not movie:
         return {"ok": False, "error": "omdb_not_found", "title": title}
 
-    movie_props, cover_url = build_movie_props(movie)
+    movie_props, poster_url = build_movie_props(movie)
+    cover_url = (tmdb_fetch_backdrop(movie.title, movie.year, tmdb_token) if tmdb_token else "") or poster_url
     success = notion.update_page(page_id, movie_props, cover_url)
     log.info(f"✓ '{movie.title}' atualizado" if success else f"✗ falha ao atualizar '{movie.title}'")
 
@@ -505,6 +543,7 @@ def run_letterboxd_sync(
     db_id: str,
     notion: NotionClient,
     omdb_key: str,
+    tmdb_token: str,
 ) -> dict:
     log.info(f"Modo sync: Letterboxd@{username} → Notion DB {db_id[:8]}…")
     entries = fetch_letterboxd_entries(username)
@@ -536,8 +575,9 @@ def run_letterboxd_sync(
                 if omdb_key:
                     movie = omdb_fetch(entry.title, entry.year, omdb_key)
                     if movie:
-                        movie_props, cover_url = build_movie_props(movie)
+                        movie_props, poster_url = build_movie_props(movie)
                         movie_props.pop("Name", None)  # preserve Letterboxd title
+                        cover_url = (tmdb_fetch_backdrop(movie.title, movie.year, tmdb_token) if tmdb_token else "") or poster_url
                         notion.update_page(page_id, movie_props, cover_url)
                     else:
                         log.warning(f"OMDB: sem dados para '{entry.title}' — criado sem metadados")
@@ -585,6 +625,7 @@ def main() -> int:
         return 1
 
     omdb_key = os.getenv("OMDB_API_KEY", "")
+    tmdb_token = os.getenv("TMDB_TOKEN", "")
     db_id = os.getenv("NOTION_DB_GUSTAVOBOXD", "")
     username = os.getenv("LETTERBOXD_USERNAME", "")
 
@@ -595,7 +636,7 @@ def main() -> int:
             log.error("OMDB_API_KEY não configurado")
             print(json.dumps({"ok": False, "error": "missing_omdb_key"}))
             return 1
-        result = run_webhook(args.page_id, notion, omdb_key)
+        result = run_webhook(args.page_id, notion, omdb_key, tmdb_token)
     else:
         if not db_id:
             log.error("NOTION_DB_GUSTAVOBOXD não configurado")
@@ -605,7 +646,7 @@ def main() -> int:
             log.error("LETTERBOXD_USERNAME não configurado")
             print(json.dumps({"ok": False, "error": "missing_letterboxd_username"}))
             return 1
-        result = run_letterboxd_sync(username, db_id, notion, omdb_key)
+        result = run_letterboxd_sync(username, db_id, notion, omdb_key, tmdb_token)
 
     result["dry_run"] = args.dry_run
     print(json.dumps(result, ensure_ascii=False))
