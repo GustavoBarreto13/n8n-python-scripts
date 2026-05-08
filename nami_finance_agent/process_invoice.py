@@ -375,7 +375,8 @@ class NotionClient:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Processa fatura PDF e cria transações faltantes no Notion.")
-    parser.add_argument("--pdf-base64", required=True, help="Conteúdo do PDF em base64")
+    parser.add_argument("--pdf-base64", help="Conteúdo do PDF em base64")
+    parser.add_argument("--file-id", help="file_id do Telegram — script baixa o PDF automaticamente")
     parser.add_argument("--dry-run", action="store_true", help="Loga sem escrever no Notion")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -392,12 +393,40 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
         return 1
 
+    if args.file_id:
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if not bot_token:
+            err = "TELEGRAM_BOT_TOKEN não configurado"
+            log.error(err)
+            print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+            return 1
+        import base64 as _b64
+        log.info("Baixando PDF do Telegram (file_id=%s)...", args.file_id)
+        info = http_request("GET", f"https://api.telegram.org/bot{bot_token}/getFile",
+                            params={"file_id": args.file_id})
+        if not info or not info.get("ok"):
+            err = f"getFile falhou: {info}"
+            log.error(err)
+            print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+            return 1
+        file_path = info["result"]["file_path"]
+        dl_resp = requests.get(f"https://api.telegram.org/file/bot{bot_token}/{file_path}", timeout=60)
+        dl_resp.raise_for_status()
+        pdf_base64 = _b64.b64encode(dl_resp.content).decode()
+    elif args.pdf_base64:
+        pdf_base64 = args.pdf_base64
+    else:
+        err = "Forneça --pdf-base64 ou --file-id"
+        log.error(err)
+        print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+        return 1
+
     gemini = GeminiClient(gemini_key)
     notion = NotionClient(notion_token, dry_run=args.dry_run)
 
     # Etapa 1: extrair transações do PDF
     log.info("Extraindo transações do PDF via Gemini...")
-    extracted = gemini.extract_from_pdf(args.pdf_base64)
+    extracted = gemini.extract_from_pdf(pdf_base64)
     if not extracted:
         err = "Gemini não conseguiu extrair transações do PDF"
         print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
