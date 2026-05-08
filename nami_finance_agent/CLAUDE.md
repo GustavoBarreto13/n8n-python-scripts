@@ -197,7 +197,9 @@ O script `main.py` substitui os nodes 7-10 do workflow (Agente Finanças + Gemin
 
 | Flag | Descrição |
 |---|---|
-| `--text TEXT` | Texto descrevendo a transação (obrigatório) |
+| `--text TEXT` | Texto descrevendo a transação (obrigatório no modo criação e update) |
+| `--delete-page-id ID` | Arquiva (soft-delete) uma transação pelo Notion page ID |
+| `--update-page-id ID` | Atualiza campos de uma transação (requer `--text` com a correção) |
 | `--dry-run` | Loga sem escrever no Notion |
 | `-v / --verbose` | Logs DEBUG no stderr |
 
@@ -229,21 +231,56 @@ O script `main.py` substitui os nodes 7-10 do workflow (Agente Finanças + Gemin
 }
 ```
 
-### n8n Code node
-
-Substitui nodes 7-10 (Agente Finanças + Gemini Flash + Parse + Notion Criar):
+### n8n Code node — criar transação
 
 ```javascript
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const text = $json.text;
-const result = execSync(
-  `/opt/venv/bin/python3 /home/node/scripts/nami_finance_agent/main.py --text ${JSON.stringify(text)}`,
+const proc = spawnSync(
+  '/opt/venv/bin/python3',
+  ['/home/node/scripts/nami_finance_agent/main.py', '--text', text, '-v'],
   { encoding: 'utf8', timeout: 60000 }
 );
-return [{ json: JSON.parse(result) }];
+if (proc.error) throw proc.error;
+const result = JSON.parse(proc.stdout.trim());
+result._logs = proc.stderr.slice(-3000);
+return [{ json: result }];
 ```
 
 O node **Confirmar** (Telegram) usa `{{$json.resumo}}`.
+
+### n8n Code node — deletar transação
+
+```javascript
+const { spawnSync } = require('child_process');
+const pageId = $json.page_id;
+const proc = spawnSync(
+  '/opt/venv/bin/python3',
+  ['/home/node/scripts/nami_finance_agent/main.py', '--delete-page-id', pageId, '-v'],
+  { encoding: 'utf8', timeout: 30000 }
+);
+if (proc.error) throw proc.error;
+const result = JSON.parse(proc.stdout.trim());
+result._logs = proc.stderr.slice(-3000);
+return [{ json: result }];
+```
+
+### n8n Code node — corrigir transação
+
+```javascript
+const { spawnSync } = require('child_process');
+const pageId = $json.page_id;
+const text = $json.correction_text;
+const proc = spawnSync(
+  '/opt/venv/bin/python3',
+  ['/home/node/scripts/nami_finance_agent/main.py', '--update-page-id', pageId, '--text', text, '-v'],
+  { encoding: 'utf8', timeout: 60000 }
+);
+if (proc.error) throw proc.error;
+const result = JSON.parse(proc.stdout.trim());
+result._logs = proc.stderr.slice(-3000);
+return [{ json: result }];
+```
 
 ### APIs utilizadas
 
@@ -251,6 +288,119 @@ O node **Confirmar** (Telegram) usa `{{$json.resumo}}`.
 |---|---|
 | Gemini REST (`generativelanguage.googleapis.com`) | 0.5s delay |
 | Notion (`api.notion.com`) | 0.4s delay |
+
+---
+
+## Script Python (process_invoice.py)
+
+Processa faturas de cartão de crédito em PDF enviadas via Telegram. Extrai todas as transações via Gemini, compara com o que já existe no Notion e cria apenas as faltantes.
+
+### Entry point
+
+```bash
+/opt/venv/bin/python3 /home/node/scripts/nami_finance_agent/process_invoice.py --pdf-base64 <base64>
+```
+
+### Flags
+
+| Flag | Descrição |
+|---|---|
+| `--pdf-base64 B64` | Conteúdo do PDF em base64 (obrigatório) |
+| `--dry-run` | Loga sem escrever no Notion |
+| `-v / --verbose` | Logs DEBUG no stderr |
+
+### Fluxo (4 etapas)
+
+1. **Gemini call 1 — Extração**: PDF inline (base64) → todas as transações + conta + período
+2. **Notion query**: busca transações existentes no período extraído
+3. **Gemini call 2 — Dedup**: compara extraídas vs existentes → retorna só as que faltam
+4. **Batch create**: cria as faltantes no Notion com índice para referência
+
+### Saída JSON
+
+```json
+{
+  "ok": true,
+  "dry_run": false,
+  "timestamp": "2026-05-08T...",
+  "added": 8,
+  "skipped": 3,
+  "period": { "start": "2025-01-01", "end": "2025-01-31" },
+  "account": "Cartao Nu",
+  "transactions": [
+    { "index": 1, "notion_page_id": "abc...", "name": "iFood", "valor": 45.90, "data": "2025-01-12", "categoria": "Comer Fora" }
+  ]
+}
+```
+
+### n8n Code node — processar fatura PDF
+
+```javascript
+const { spawnSync } = require('child_process');
+const fileData = $binary.data.data; // base64 do PDF do Telegram
+const proc = spawnSync(
+  '/opt/venv/bin/python3',
+  ['/home/node/scripts/nami_finance_agent/process_invoice.py', '--pdf-base64', fileData, '-v'],
+  { encoding: 'utf8', timeout: 180000 }
+);
+if (proc.error) throw proc.error;
+const result = JSON.parse(proc.stdout.trim());
+result._logs = proc.stderr.slice(-3000);
+return [{ json: result }];
+```
+
+### n8n Code node — formatar confirmação
+
+```javascript
+const { added, skipped, account, period, transactions } = $json;
+const lines = transactions.map(t =>
+  `${t.index}. R$ ${t.valor.toFixed(2)} — ${t.name} (${t.data.slice(5)}) — ${t.categoria}`
+);
+const month = new Date(period.start).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+const msg = [
+  `✅ ${account} — ${month}`,
+  `Adicionadas ${added}, puladas ${skipped}`,
+  '',
+  ...lines,
+  '',
+  'Para corrigir: "remove 2" ou "corrige 1: valor era 55,90"',
+].join('\n');
+return [{ json: { text: msg, transactions } }];
+```
+
+### Detecção de correção no workflow (branch de texto)
+
+Antes de chamar `main.py` no branch de texto, detectar se é um comando de correção:
+
+```javascript
+// Condição do nó IF "É correção?"
+const text = $json.text || '';
+return /^(remove|corrige)\s+\d+/i.test(text.trim());
+```
+
+Se for correção, extrair índice e buscar o `notion_page_id` no mapa armazenado:
+
+```javascript
+// Armazenar mapa após processar fatura
+const staticData = $getWorkflowStaticData('global');
+staticData[String($json.chatId)] = $json.transactions; // array com index + notion_page_id
+
+// Recuperar ao processar correção
+const text = $json.text.trim();
+const match = text.match(/^(remove|corrige)\s+(\d+)/i);
+const idx = parseInt(match[2]);
+const chatId = String($json.chatId);
+const staticData = $getWorkflowStaticData('global');
+const map = staticData[chatId] || [];
+const entry = map.find(t => t.index === idx);
+if (!entry) return [{ json: { error: `Transação ${idx} não encontrada` } }];
+
+return [{ json: {
+  action: match[1].toLowerCase(),
+  page_id: entry.notion_page_id,
+  correction_text: text.replace(/^(remove|corrige)\s+\d+:?\s*/i, ''),
+} }];
+```
 
 ---
 

@@ -38,9 +38,9 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-GEMINI_DELAY = 4.0 # 4 segundos para evitar Rate Limit (15 RPM no tier gratuito)
+GEMINI_DELAY = 6.0 # 6 segundos para evitar Rate Limit com folga (15 RPM no tier gratuito)
 MAX_RETRIES = 5
-RETRY_BACKOFF = 3.0
+RETRY_BACKOFF = 15.0 # Esperar mais tempo em caso de 429 (começa em 15s, depois 30s, etc)
 
 logging.basicConfig(
     stream=sys.stdout,

@@ -220,10 +220,10 @@ class GeminiClient:
     def __init__(self, api_key: str) -> None:
         self.api_key = api_key
 
-    def extract_transaction(self, text: str) -> Optional[dict]:
+    def _call(self, system_prompt: str, text: str) -> Optional[dict]:
         url = f"{self.BASE}/{GEMINI_MODEL}:generateContent"
         body = {
-            "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "system_instruction": {"parts": [{"text": system_prompt}]},
             "contents": [{"parts": [{"text": text}]}],
         }
         resp = http_request("POST", url, params={"key": self.api_key}, json_body=body)
@@ -233,7 +233,6 @@ class GeminiClient:
             return None
         try:
             raw = resp["candidates"][0]["content"]["parts"][0]["text"].strip()
-            # Remove markdown code fences caso o modelo ignore a instrução
             if raw.startswith("```"):
                 raw = re.sub(r"^```[a-z]*\n?", "", raw)
                 raw = re.sub(r"\n?```$", "", raw)
@@ -241,6 +240,27 @@ class GeminiClient:
         except (KeyError, IndexError, json.JSONDecodeError) as exc:
             log.error("Falha ao parsear resposta do Gemini: %s", exc)
             return None
+
+    def extract_transaction(self, text: str) -> Optional[dict]:
+        return self._call(SYSTEM_PROMPT, text)
+
+    def extract_update(self, text: str) -> Optional[dict]:
+        update_prompt = (
+            "Extraia os campos a serem corrigidos de uma transação financeira.\n"
+            "Retorne APENAS JSON com os campos mencionados na correção:\n"
+            "- name: string\n"
+            "- valor: número decimal\n"
+            "- tipo: \"Despesa\" ou \"Receita\"\n"
+            "- data: YYYY-MM-DD\n"
+            "- categoria_id: usar IDs abaixo\n"
+            "- conta_id: usar IDs abaixo\n\n"
+            "CATEGORIAS:\n"
+            + "\n".join(f"{k}={v}" for k, v in CATEGORIES.items())
+            + "\n\nCONTAS:\n"
+            + "\n".join(f"{k}={v}" for k, v in ACCOUNTS.items())
+            + "\n\nRetorne APENAS o JSON. Sem markdown. Sem explicações."
+        )
+        return self._call(update_prompt, text)
 
 
 # ============================================================
@@ -257,6 +277,52 @@ class NotionClient:
             "Content-Type": "application/json",
         }
         self.dry_run = dry_run
+
+    def delete_transaction(self, page_id: str) -> bool:
+        if self.dry_run:
+            log.info("[DRY] delete_transaction %s", page_id)
+            return True
+        resp = http_request(
+            "PATCH", f"{self.BASE}/pages/{page_id}",
+            headers=self.headers, json_body={"archived": True},
+        )
+        time.sleep(NOTION_DELAY)
+        if not resp:
+            log.error("Falha ao arquivar página: %s", get_last_http_error())
+            return False
+        log.info("Página arquivada: %s", page_id)
+        return True
+
+    def update_transaction(self, page_id: str, changes: dict) -> bool:
+        if self.dry_run:
+            log.info("[DRY] update_transaction %s: %s", page_id, changes)
+            return True
+        properties = {}
+        if "name" in changes:
+            properties["Name"] = {"title": [{"text": {"content": changes["name"]}}]}
+        if "valor" in changes:
+            properties["Valor"] = {"number": changes["valor"]}
+        if "tipo" in changes:
+            properties["Tipo"] = {"select": {"name": changes["tipo"]}}
+        if "data" in changes:
+            properties["Data"] = {"date": {"start": changes["data"]}}
+        if "categoria_id" in changes:
+            properties["Categorias"] = {"relation": [{"id": changes["categoria_id"]}]}
+        if "conta_id" in changes:
+            properties["Contas e Cartões"] = {"relation": [{"id": changes["conta_id"]}]}
+        if not properties:
+            log.warning("Nenhuma propriedade reconhecida para atualizar")
+            return False
+        resp = http_request(
+            "PATCH", f"{self.BASE}/pages/{page_id}",
+            headers=self.headers, json_body={"properties": properties},
+        )
+        time.sleep(NOTION_DELAY)
+        if not resp:
+            log.error("Falha ao atualizar página: %s", get_last_http_error())
+            return False
+        log.info("Página atualizada: %s | campos: %s", page_id, list(properties.keys()))
+        return True
 
     def create_transaction(self, data: dict) -> Optional[str]:
         if self.dry_run:
@@ -292,25 +358,66 @@ class NotionClient:
 # ============================================================
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Registra transação financeira no Notion via Gemini.")
-    parser.add_argument("--text", required=True, help="Texto descrevendo a transação")
+    parser = argparse.ArgumentParser(description="Registra/edita transação financeira no Notion via Gemini.")
+    parser.add_argument("--text", default=None, help="Texto descrevendo a transação ou a correção")
+    parser.add_argument("--delete-page-id", default=None, help="Arquiva (soft-delete) uma transação existente")
+    parser.add_argument("--update-page-id", default=None, help="Atualiza campos de uma transação existente (requer --text)")
     parser.add_argument("--dry-run", action="store_true", help="Loga sem escrever no Notion")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
     setup_logging(args.verbose)
-    log.info("Processando: %s", args.text[:80])
 
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    if args.update_page_id and not args.text:
+        parser.error("--update-page-id requer --text com o texto de correção")
+    if not args.text and not args.delete_page_id and not args.update_page_id:
+        parser.error("Informe --text, --delete-page-id ou --update-page-id")
+
     notion_token = resolve_notion_token()
+    missing_vars = [k for k, v in [("NOTION_TOKEN", notion_token)] if not v]
 
-    missing = [k for k, v in [("GEMINI_API_KEY", gemini_key), ("NOTION_TOKEN", notion_token)] if not v]
-    if missing:
-        err = f"Variáveis de ambiente ausentes: {', '.join(missing)}"
+    if args.delete_page_id:
+        if missing_vars:
+            err = f"Variáveis de ambiente ausentes: {', '.join(missing_vars)}"
+            log.error(err)
+            print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+            return 1
+        notion = NotionClient(notion_token, dry_run=args.dry_run)
+        ok = notion.delete_transaction(args.delete_page_id)
+        result = {"ok": ok, "page_id": args.delete_page_id, "action": "deleted"}
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if ok else 1
+
+    if args.update_page_id:
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        missing_vars += [k for k, v in [("GEMINI_API_KEY", gemini_key)] if not v]
+        if missing_vars:
+            err = f"Variáveis de ambiente ausentes: {', '.join(missing_vars)}"
+            log.error(err)
+            print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+            return 1
+        gemini = GeminiClient(gemini_key)
+        notion = NotionClient(notion_token, dry_run=args.dry_run)
+        changes = gemini.extract_update(args.text)
+        if not changes:
+            err = "Gemini não conseguiu extrair os campos de correção"
+            print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
+            return 1
+        ok = notion.update_transaction(args.update_page_id, changes)
+        result = {"ok": ok, "page_id": args.update_page_id, "action": "updated", "changes": changes}
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if ok else 1
+
+    # Modo padrão: criar nova transação
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    missing_vars += [k for k, v in [("GEMINI_API_KEY", gemini_key)] if not v]
+    if missing_vars:
+        err = f"Variáveis de ambiente ausentes: {', '.join(missing_vars)}"
         log.error(err)
         print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
         return 1
 
+    log.info("Processando: %s", args.text[:80])
     gemini = GeminiClient(gemini_key)
     notion = NotionClient(notion_token, dry_run=args.dry_run)
 
