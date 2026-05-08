@@ -63,8 +63,9 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 NOTION_DELAY = 0.4
 GEMINI_DELAY = 0.5
 
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 RETRY_BACKOFF = 2.0
+RETRY_BACKOFF_429 = 30.0
 
 CATEGORIES: dict[str, str] = {
     "Alimentacao": "2b4f090ea3ca80e7b1b5d7366da8de6c",
@@ -181,7 +182,7 @@ def http_request(
                 timeout=timeout,
             )
             if resp.status_code == 429:
-                wait = RETRY_BACKOFF * (2 ** (attempt - 1))
+                wait = RETRY_BACKOFF_429 * attempt
                 log.warning("429 — retry em %.1fs", wait)
                 time.sleep(wait)
                 continue
@@ -290,9 +291,12 @@ class GeminiClient:
         log.error("Timeout esperando arquivo ficar ACTIVE")
         return None
 
-    def extract_from_pdf(self, pdf_base64: str) -> Optional[dict]:
+    def extract_from_pdf(self, pdf_base64: str) -> Optional[dict | str]:
         """Extrai todas as transações do PDF via Gemini (Files API)."""
         pdf_bytes = _b64.b64decode(pdf_base64)
+        if b"/Encrypt" in pdf_bytes[:8192]:
+            log.error("PDF protegido com senha — remova a senha antes de enviar")
+            return "ENCRYPTED"
         file_uri = self._upload_pdf(pdf_bytes)
         if not file_uri:
             return None
@@ -300,7 +304,7 @@ class GeminiClient:
             {"fileData": {"mimeType": "application/pdf", "fileUri": file_uri}},
             {"text": EXTRACTION_PROMPT},
         ]
-        raw = self._generate(parts, timeout=120)
+        raw = self._generate(parts, timeout=300)
         if not raw:
             return None
         try:
@@ -471,6 +475,9 @@ def main() -> int:
     # Etapa 1: extrair transações do PDF
     log.info("Extraindo transações do PDF via Gemini...")
     extracted = gemini.extract_from_pdf(pdf_base64)
+    if extracted == "ENCRYPTED":
+        print(json.dumps({"ok": False, "error": "PDF protegido com senha. Envie a versão sem senha."}, ensure_ascii=False))
+        return 1
     if not extracted:
         err = "Gemini não conseguiu extrair transações do PDF"
         print(json.dumps({"ok": False, "error": err}, ensure_ascii=False))
