@@ -266,3 +266,12 @@ docker exec -it <container_id> bash
 **Logs não aparecem no `_logs`**
 - Verificar se o script usa `setup_logging()` que direciona para stderr.
 - Verificar se o Code node usa `-v` nos args do `spawnSync`.
+
+---
+
+## Documentação no Obsidian
+
+A documentação detalhada, arquitetura e registros de decisões deste projeto estão armazenados no vault do Obsidian.
+Sempre que você criar, modificar ou refatorar algo significativo neste repositório (novos scripts, mudanças de infraestrutura, novos fluxos no n8n), **é obrigatório** refletir essas atualizações na documentação do Obsidian.
+* **Como acessar**: Utilize a skill `obsidian-vault` para consultar os caminhos corretos e editar os arquivos no seu vault do Obsidian
+* **Diretriz**: O código e a base de conhecimento no Obsidian devem evoluir juntos. Nunca faça uma alteração grande sem também atualizar a documentação lá.
