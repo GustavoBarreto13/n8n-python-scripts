@@ -151,7 +151,7 @@ def http_request(
     headers: Optional[dict] = None,
     params: Optional[dict] = None,
     json_body: Optional[dict] = None,
-    timeout: int = 45,
+    timeout: int = 30,
 ) -> Optional[dict]:
     global _last_http_error
     for attempt in range(1, MAX_RETRIES + 1):
@@ -273,7 +273,7 @@ def build_telegram_digest(overview: str, intel_briefing: str, action_items: list
 def fetch_emails_via_imap(username: str, password: str) -> tuple:
     log.info("Conectando ao IMAP (%s)...", username)
     try:
-        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        mail = imaplib.IMAP4_SSL('imap.gmail.com', timeout=30)
         mail.login(username, password)
         mail.select('inbox')
     except Exception as exc:
@@ -362,14 +362,13 @@ def fetch_emails_via_imap(username: str, password: str) -> tuple:
                 body = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
         
         full_text = " ".join(body.split())
-        snippet = full_text[:200]
+        snippet = full_text[:500]
 
         emails_data.append({
             "uid": uid.decode('utf-8'),
             "subject": subject,
             "from": from_,
             "snippet": snippet,
-            "full_body": full_text
         })
 
     return mail, emails_data
