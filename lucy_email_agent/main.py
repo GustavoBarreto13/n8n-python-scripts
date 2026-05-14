@@ -41,8 +41,9 @@ _load_dotenv()
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_DELAY = 0.5
-MAX_RETRIES = 5
+MAX_RETRIES = 3
 RETRY_BACKOFF = 15.0
+RETRY_MAX_WAIT = 60.0
 
 CATEGORY_EMOJIS = {
     "Art / Hobbies": "🎭",
@@ -164,7 +165,9 @@ def http_request(
                 timeout=timeout,
             )
             if resp.status_code == 429:
-                wait = RETRY_BACKOFF * (2 ** (attempt - 1))
+                log.warning("429 rate limit. Body: %s", (resp.text or "")[:300])
+                wait = min(RETRY_BACKOFF * (2 ** (attempt - 1)), RETRY_MAX_WAIT)
+                log.warning("Aguardando %.0fs antes de retry %d/%d...", wait, attempt, MAX_RETRIES)
                 time.sleep(wait)
                 continue
             if 500 <= resp.status_code < 600:
