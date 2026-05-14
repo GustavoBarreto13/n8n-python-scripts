@@ -41,8 +41,8 @@ _load_dotenv()
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_DELAY = 0.5
-MAX_RETRIES = 3
-RETRY_BACKOFF = 2.0
+MAX_RETRIES = 5
+RETRY_BACKOFF = 15.0
 
 CATEGORY_EMOJIS = {
     "Art / Hobbies": "🎭",
