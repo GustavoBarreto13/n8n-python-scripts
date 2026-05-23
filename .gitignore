@@ -14,3 +14,4 @@ spotify_sync/.spotify_token.json
 spotify_data/
 .claude
 spotify_sync/.gcp-sa.json.json
+.venv

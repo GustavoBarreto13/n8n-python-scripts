@@ -223,7 +223,13 @@ def _offline_ts_to_iso(val) -> Optional[str]:
         return None
     if n <= 0:
         return None
-    return datetime.fromtimestamp(n, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Spotify às vezes grava em milissegundos (13 dígitos); normaliza para segundos.
+    if n > 10_000_000_000:
+        n //= 1000
+    try:
+        return datetime.fromtimestamp(n, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (OSError, ValueError, OverflowError):
+        return None
 
 
 def normalize_gdpr_row(entry: dict, ingested_at: str) -> dict:

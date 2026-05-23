@@ -1,2 +1,20 @@
+# Dependências consolidadas de todos os scripts do repo.
+# Espelha as libs instaladas no venv do container n8n em produção (/opt/venv).
+# Para criar o venv local:
+#   python -m venv .venv
+#   .venv\Scripts\activate          (Windows)  |  source .venv/bin/activate (Linux/Mac)
+#   pip install -r requirements.txt
+
+# HTTP — usado por praticamente todos os scripts
 requests>=2.31.0
+
+# BigQuery — usado por spotify_sync
 google-cloud-bigquery>=3.20.0
+
+# Libs presentes no Dockerfile do container n8n (disponíveis em runtime no VPS).
+# Manter aqui mantém o ambiente local equivalente ao de produção.
+pandas>=2.0.0
+numpy>=1.26.0
+beautifulsoup4>=4.12.0
+openpyxl>=3.1.0
+yt-dlp>=2024.1.0
