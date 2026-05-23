@@ -161,6 +161,13 @@ TMDB_TOKEN         = os.environ.get("TMDB_TOKEN")          # para series_sync e 
 OMDB_API_KEY       = os.environ.get("OMDB_API_KEY")        # para gustavoboxd — API key do OMDB
 LETTERBOXD_USERNAME = os.environ.get("LETTERBOXD_USERNAME") # para gustavoboxd — username do Letterboxd
 NOTION_DB_GUSTAVOBOXD = os.environ.get("NOTION_DB_GUSTAVOBOXD") # para gustavoboxd — ID do banco de filmes
+SPOTIFY_CLIENT_ID     = os.environ.get("SPOTIFY_CLIENT_ID")     # para spotify_sync — App do Spotify Developer
+SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET") # para spotify_sync
+SPOTIFY_REFRESH_TOKEN = os.environ.get("SPOTIFY_REFRESH_TOKEN") # para spotify_sync — obtido via get_token.py
+GCP_PROJECT_ID        = os.environ.get("GCP_PROJECT_ID")        # para spotify_sync — projeto BigQuery
+BQ_DATASET            = os.environ.get("BQ_DATASET")            # para spotify_sync — dataset (ex: "spotify")
+BQ_TABLE              = os.environ.get("BQ_TABLE")              # para spotify_sync — tabela (ex: "streaming_history")
+GOOGLE_APPLICATION_CREDENTIALS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # path do service account JSON
 ```
 
 Credenciais de APIs externas devem ser passadas como argumentos pelo n8n ou lidas de env vars configuradas no Dokploy.
@@ -198,6 +205,12 @@ n8n-python-scripts/
 ├── gustavoboxd/
 │   ├── main.py
 │   └── CLAUDE.md                    ← contexto específico do gustavoboxd
+├── spotify_sync/
+│   ├── main.py
+│   ├── get_token.py
+│   ├── CLAUDE.md                    ← contexto específico do spotify_sync
+│   ├── .gcp-sa.json                 ← service account GCP, gitignored
+│   └── .last_sync.json              ← runtime, gitignored
 └── lucy_digest/                     ← futuro
     └── main.py
 ```
@@ -217,6 +230,7 @@ n8n-python-scripts/
 | GustavoBooks | `YW1MqVhd6zR-ufOvrxJIR` | Webhook do Notion → busca Google Books/Open Library → atualiza página com metadados do livro |
 | Series Boxd (Python) | `QNmGcoi1Oad9s1uW` | Webhook/Schedule → series_sync/main.py → TMDB → atualiza série/temporadas/episódios no Notion |
 | GustavoBoxd — Webhook (OMDB) | `0CvDslbxVNVeg0uv` | Webhook Notion + Schedule diário (08h) → gustavoboxd/main.py → OMDB/TMDB/Letterboxd RSS → Notion |
+| Spotify History Sync | `<a-preencher>` | Schedule a cada 1h → spotify_sync/main.py → Spotify API → BigQuery (MERGE) |
 
 ---
 

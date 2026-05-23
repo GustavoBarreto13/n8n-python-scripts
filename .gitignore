@@ -7,4 +7,10 @@ ticktick_notion_sync/.last_sync.json
 ticktick_notion_sync/.last_sync.json.tmp
 ticktick_notion_sync/.sync_cache.json
 ticktick_notion_sync/.sync_cache.json.tmp
+spotify_sync/.gcp-sa.json
+spotify_sync/.last_sync.json
+spotify_sync/.last_sync.json.tmp
+spotify_sync/.spotify_token.json
+spotify_data/
 .claude
+spotify_sync/.gcp-sa.json.json
