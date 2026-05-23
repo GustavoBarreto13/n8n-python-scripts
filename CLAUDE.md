@@ -211,8 +211,11 @@ n8n-python-scripts/
 │   ├── CLAUDE.md                    ← contexto específico do spotify_sync
 │   ├── .gcp-sa.json                 ← service account GCP, gitignored
 │   └── .last_sync.json              ← runtime, gitignored
-└── lucy_digest/                     ← futuro
-    └── main.py
+├── lucy_email_agent/
+│   ├── main.py
+│   └── CLAUDE.md                    ← contexto específico do lucy_email_agent
+└── youtube_history_sync/
+    └── PLAN.md                      ← carga histórica YouTube via Takeout → BigQuery (a implementar)
 ```
 
 ---
@@ -230,6 +233,7 @@ n8n-python-scripts/
 | GustavoBooks | `YW1MqVhd6zR-ufOvrxJIR` | Webhook do Notion → busca Google Books/Open Library → atualiza página com metadados do livro |
 | Series Boxd (Python) | `QNmGcoi1Oad9s1uW` | Webhook/Schedule → series_sync/main.py → TMDB → atualiza série/temporadas/episódios no Notion |
 | GustavoBoxd — Webhook (OMDB) | `0CvDslbxVNVeg0uv` | Webhook Notion + Schedule diário (08h) → gustavoboxd/main.py → OMDB/TMDB/Letterboxd RSS → Notion |
+| Lucy Gmail Digest | `FXeSRs23jMJvIUuj` | Schedule 8h → Gmail IMAP → Gemini classifica e gera digest no Telegram |
 | Spotify History Sync | `KftB75QdQHXbIzgj` | Schedule a cada 1h → spotify_sync/main.py → Spotify API → BigQuery (MERGE) |
 
 ---

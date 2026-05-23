@@ -1,6 +1,6 @@
 # n8n Python Scripts
 
-Scripts Python usados nos workflows do n8n. Cada script é um módulo independente chamado via `execSync` em Code nodes, imprime JSON no stdout e retorna para o n8n.
+Scripts Python usados nos workflows do n8n. Cada script é um módulo independente chamado via `spawnSync` em Code nodes, imprime JSON no stdout e retorna para o n8n.
 
 ## Scripts
 
@@ -19,6 +19,14 @@ Delta sync da lista do MyAnimeList → database "Animes" do Notion, baseado em `
 ### `books_sync`
 
 Busca metadados de livros (Google Books com fallback para Open Library) usando ISBN ou Título + Autor e atualiza a página no Notion com propriedades como Author, Pages, Description, Publish Date, ISBN-10 e Cover.
+
+**Trigger**: workflow `GustavoBooks` (`YW1MqVhd6zR-ufOvrxJIR`)
+
+### `series_sync`
+
+Webhook do Notion + Schedule diário → TMDB → cria/atualiza páginas de série, temporadas e episódios no Notion.
+
+**Trigger**: workflow `Series Boxd (Python)` (`QNmGcoi1Oad9s1uW`)
 
 ### `ticktick_notion_sync`
 
@@ -40,9 +48,23 @@ Dois modos no mesmo workflow (`0CvDslbxVNVeg0uv`):
 
 **Trigger**: workflow `GustavoBoxd — Webhook (OMDB)` (`0CvDslbxVNVeg0uv`) — Notion Webhook + Schedule (08:00)
 
-### `lucy_digest` *(em desenvolvimento)*
+### `lucy_email_agent`
 
-Processa emails do Gmail com a personalidade da Lucy (Cyberpunk Edgerunners) e envia digest diário pro Telegram.
+Processa emails do Gmail via IMAP, classifica com Gemini 2.0 Flash incorporando a personalidade da Lucy (Cyberpunk Edgerunners), aplica labels e envia digest diário no Telegram.
+
+**Trigger**: workflow `Lucy Gmail Digest` (`FXeSRs23jMJvIUuj`) — Schedule 08:00
+
+### `spotify_sync`
+
+Sincroniza o histórico de reproduções do Spotify para uma tabela particionada no BigQuery. Dois modos:
+- **Polling horário** via API `/me/player/recently-played` → MERGE no BigQuery em `(ts, spotify_track_uri)`.
+- **Import histórico** (`--import-history`) via JSONs do GDPR (Extended Streaming History) — carga única com `WRITE_TRUNCATE`.
+
+**Trigger**: workflow `Spotify History Sync` (`KftB75QdQHXbIzgj`) — Schedule 1h
+
+### `youtube_history_sync` *(planejado)*
+
+Mesma arquitetura do `spotify_sync` para histórico do YouTube via Google Takeout. Sem polling — a API do YouTube não expõe watch history. Plano detalhado em [`youtube_history_sync/PLAN.md`](youtube_history_sync/PLAN.md).
 
 ---
 
@@ -57,16 +79,25 @@ n8n-python-scripts/
 │   └── main.py
 ├── mal_sync/
 │   └── main.py
+├── series_sync/
+│   └── main.py
 ├── ticktick_notion_sync/
 │   ├── main.py
-│   └── get_token.py        ← gera tokens OAuth do TickTick localmente
+│   └── get_token.py            ← gera tokens OAuth do TickTick localmente
 ├── nami_finance_agent/
 │   └── main.py
 ├── gustavoboxd/
 │   └── main.py
-└── lucy_digest/
-    └── main.py
+├── lucy_email_agent/
+│   └── main.py
+├── spotify_sync/
+│   ├── main.py
+│   └── get_token.py            ← gera refresh_token OAuth do Spotify localmente
+└── youtube_history_sync/
+    └── PLAN.md                 ← a implementar
 ```
+
+Cada pasta tem seu próprio `CLAUDE.md` com contexto detalhado do módulo.
 
 ---
 
