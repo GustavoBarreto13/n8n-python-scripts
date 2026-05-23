@@ -40,6 +40,7 @@ from typing import Optional
 import requests
 
 try:
+    # pyrefly: ignore [missing-import]
     from google.cloud import bigquery
 except ImportError:
     bigquery = None  # validado em runtime; permite --help sem a lib instalada

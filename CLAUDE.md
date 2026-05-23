@@ -230,7 +230,7 @@ n8n-python-scripts/
 | GustavoBooks | `YW1MqVhd6zR-ufOvrxJIR` | Webhook do Notion → busca Google Books/Open Library → atualiza página com metadados do livro |
 | Series Boxd (Python) | `QNmGcoi1Oad9s1uW` | Webhook/Schedule → series_sync/main.py → TMDB → atualiza série/temporadas/episódios no Notion |
 | GustavoBoxd — Webhook (OMDB) | `0CvDslbxVNVeg0uv` | Webhook Notion + Schedule diário (08h) → gustavoboxd/main.py → OMDB/TMDB/Letterboxd RSS → Notion |
-| Spotify History Sync | `<a-preencher>` | Schedule a cada 1h → spotify_sync/main.py → Spotify API → BigQuery (MERGE) |
+| Spotify History Sync | `KftB75QdQHXbIzgj` | Schedule a cada 1h → spotify_sync/main.py → Spotify API → BigQuery (MERGE) |
 
 ---
 

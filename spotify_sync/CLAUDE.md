@@ -21,7 +21,7 @@ A API só expõe ~24h. O GDPR é a única forma de obter histórico estendido �
 
 ## Workflow n8n
 
-**Spotify History Sync** — ID: `<a-preencher-após-criar>`
+**Spotify History Sync** — ID: `KftB75QdQHXbIzgj`
 
 | Trigger | Tipo | Destino |
 |---|---|---|
