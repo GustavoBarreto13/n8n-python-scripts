@@ -52,7 +52,7 @@ Dois modos no mesmo workflow (`0CvDslbxVNVeg0uv`):
 
 Processa emails do Gmail via IMAP, classifica com Gemini 2.0 Flash incorporando a personalidade da Lucy (Cyberpunk Edgerunners), aplica labels e envia digest diário no Telegram.
 
-**Trigger**: workflow `Lucy Gmail Digest` (`FXeSRs23jMJvIUuj`) — Schedule 08:00
+**Trigger**: workflow `Lucy Email Agent` (`FXeSRs23jMJvIUuj`) — Schedule 08:00
 
 ### `spotify_sync`
 
