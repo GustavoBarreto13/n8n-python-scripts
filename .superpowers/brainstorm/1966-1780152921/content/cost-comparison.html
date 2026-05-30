@@ -1,0 +1,113 @@
+<h2>Impacto de custo: Lucy atual vs. ADK</h2>
+<p class="subtitle">Números reais com Gemini 2.0 Flash — $0.10/1M input, $0.40/1M output</p>
+
+<div class="section">
+  <h3>Por que ADK custa mais: o contexto cresce a cada tool call</h3>
+  <div style="background: #1a1a2e; border-radius: 8px; padding: 16px; font-size: 12px; font-family: monospace;">
+    <div style="color: #555; margin-bottom: 8px; font-size: 11px;">CADA TURNO DO AGENTE — o contexto acumula:</div>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="width: 60px; font-size: 10px; color: #666;">turno 1</div>
+        <div style="background: #7c8cf8; height: 20px; width: 120px; border-radius: 3px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: white;">system ~1k tokens</div>
+        <div style="color: #555; font-size: 10px;">→ fetch_emails()</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="width: 60px; font-size: 10px; color: #666;">turno 2</div>
+        <div style="background: #7c8cf8; height: 20px; width: 120px; border-radius: 3px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: white;">system ~1k</div>
+        <div style="background: #f7c948; height: 20px; width: 180px; border-radius: 3px; margin-left: 2px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: #1a1a1a;">+ 50 emails ~15k tokens</div>
+        <div style="color: #555; font-size: 10px;">→ label(email_1)</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="width: 60px; font-size: 10px; color: #666;">turno 3</div>
+        <div style="background: #7c8cf8; height: 20px; width: 120px; border-radius: 3px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: white;">system ~1k</div>
+        <div style="background: #f7c948; height: 20px; width: 180px; border-radius: 3px; margin-left: 2px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: #1a1a1a;">+ emails ~15k</div>
+        <div style="background: #f97316; height: 20px; width: 60px; border-radius: 3px; margin-left: 2px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: white;">+ hist</div>
+        <div style="color: #555; font-size: 10px;">→ label(email_2)</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="width: 60px; font-size: 10px; color: #666;">turno 50+</div>
+        <div style="background: #7c8cf8; height: 20px; width: 120px; border-radius: 3px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: white;">system ~1k</div>
+        <div style="background: #f7c948; height: 20px; width: 180px; border-radius: 3px; margin-left: 2px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: #1a1a1a;">+ emails ~15k</div>
+        <div style="background: #f97316; height: 20px; width: 160px; border-radius: 3px; margin-left: 2px; display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: white;">+ histórico ~10k</div>
+        <div style="color: #ff4444; font-size: 10px; font-weight: bold;">💸</div>
+      </div>
+    </div>
+    <div style="margin-top: 10px; color: #555; font-size: 10px;">Cada turno re-envia o contexto inteiro. 50 emails × contexto crescente = custo explode.</div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Comparação numérica (50 emails/dia)</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+
+    <div style="background: #1a1a2e; border-radius: 8px; overflow: hidden;">
+      <div style="background: #2a2a4e; padding: 8px 12px; font-size: 11px; color: #7c8cf8; font-weight: bold;">Lucy hoje (1 chamada)</div>
+      <div style="padding: 12px; font-size: 11px; color: #aaa; line-height: 2;">
+        <div>Input: ~17.000 tokens</div>
+        <div style="color: #666; font-size: 10px; padding-left: 8px;">system + 50 emails</div>
+        <div>Output: ~3.000 tokens</div>
+        <div style="color: #666; font-size: 10px; padding-left: 8px;">JSON categorizado</div>
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a3e;">
+          <div style="font-size: 13px; color: #4ade80; font-weight: bold;">~$0.003/dia</div>
+          <div style="color: #666; font-size: 10px;">~$0.09/mês</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: #1a1a2e; border-radius: 8px; overflow: hidden;">
+      <div style="background: #3e1a1a; padding: 8px 12px; font-size: 11px; color: #f97316; font-weight: bold;">ADK naive (email por email)</div>
+      <div style="padding: 12px; font-size: 11px; color: #aaa; line-height: 2;">
+        <div>Input: ~870.000 tokens</div>
+        <div style="color: #666; font-size: 10px; padding-left: 8px;">50 turnos × contexto crescente</div>
+        <div>Output: ~5.000 tokens</div>
+        <div style="color: #666; font-size: 10px; padding-left: 8px;">tool calls + resposta final</div>
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a3e;">
+          <div style="font-size: 13px; color: #f97316; font-weight: bold;">~$0.089/dia</div>
+          <div style="color: #666; font-size: 10px;">~$2.67/mês — 30× mais caro</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: #1a1a2e; border-radius: 8px; overflow: hidden;">
+      <div style="background: #1a2e1a; padding: 8px 12px; font-size: 11px; color: #4ade80; font-weight: bold;">ADK inteligente (batch)</div>
+      <div style="padding: 12px; font-size: 11px; color: #aaa; line-height: 2;">
+        <div>Input: ~20.000 tokens</div>
+        <div style="color: #666; font-size: 10px; padding-left: 8px;">fetch → categorize all → act</div>
+        <div>Output: ~4.000 tokens</div>
+        <div style="color: #666; font-size: 10px; padding-left: 8px;">tool calls paralelos</div>
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #2a2a3e;">
+          <div style="font-size: 13px; color: #4ade80; font-weight: bold;">~$0.004/dia</div>
+          <div style="color: #666; font-size: 10px;">~$0.12/mês — similar ao atual</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <div style="margin-top: 8px; padding: 8px 12px; background: #1e2030; border-radius: 4px; font-size: 10px; color: #555;">
+    * ADK "inteligente" requer que o agente chame as tools em paralelo e não processe email por email — isso não é garantido, depende do comportamento do modelo.
+  </div>
+</div>
+
+<div class="section">
+  <h3>Quando o custo do ADK vale a pena?</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+    <div style="padding: 12px; background: #0f2b1e; border: 1px solid #1a5c35; border-radius: 8px; font-size: 12px;">
+      <div style="color: #4ade80; margin-bottom: 8px;">✅ ADK faz sentido</div>
+      <ul style="color: #aaa; margin: 0; padding-left: 16px; line-height: 1.9;">
+        <li>Tarefa interativa com poucas chamadas</li>
+        <li>Você quer raciocínio multi-step genuíno</li>
+        <li>Comportamento imprevisível é aceitável</li>
+        <li>Volume baixo de operações por execução</li>
+      </ul>
+    </div>
+    <div style="padding: 12px; background: #2b1a0f; border: 1px solid #5c3a1a; border-radius: 8px; font-size: 12px;">
+      <div style="color: #f97316; margin-bottom: 8px;">⚠️ Script direto é melhor</div>
+      <ul style="color: #aaa; margin: 0; padding-left: 16px; line-height: 1.9;">
+        <li>Batch com N itens idênticos (50 emails)</li>
+        <li>Fluxo 100% determinístico e previsível</li>
+        <li>Custo é uma restrição real</li>
+        <li>Output estruturado bem definido</li>
+      </ul>
+    </div>
+  </div>
+</div>

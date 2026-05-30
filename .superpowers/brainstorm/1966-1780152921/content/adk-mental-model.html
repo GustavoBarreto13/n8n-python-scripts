@@ -1,0 +1,87 @@
+<h2>A virada de chave: Script vs. Agente</h2>
+<p class="subtitle">O que muda quando você usa o Google ADK</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">📜 Como funciona hoje (script)</div>
+    <div class="mockup-body">
+      <div style="font-size: 12px; color: #aaa; margin-bottom: 12px;">Você (o dev) é o orquestrador.</div>
+      <div style="font-family: monospace; font-size: 12px; line-height: 2;">
+        <div style="color: #7c8cf8;">1. Você decide quais dados coletar</div>
+        <div style="color: #888; padding-left: 12px;">→ busca emails / lê texto</div>
+        <div style="color: #7c8cf8;">2. Você chama o Gemini 1 vez</div>
+        <div style="color: #888; padding-left: 12px;">→ "analisa tudo e me dê um JSON"</div>
+        <div style="color: #7c8cf8;">3. Você interpreta a resposta</div>
+        <div style="color: #888; padding-left: 12px;">→ parse, validação, expansão</div>
+        <div style="color: #7c8cf8;">4. Você chama as APIs externas</div>
+        <div style="color: #888; padding-left: 12px;">→ Notion, IMAP, etc.</div>
+      </div>
+      <div style="margin-top: 16px; padding: 10px; background: #1e1e30; border-radius: 6px; font-size: 11px; color: #666; line-height: 1.6;">
+        O Gemini é <strong style="color: #aaa;">uma caixa de extração de dados</strong>.<br>
+        O Python faz toda a lógica.
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">🤖 Como funciona com ADK (agente)</div>
+    <div class="mockup-body">
+      <div style="font-size: 12px; color: #aaa; margin-bottom: 12px;">O Gemini é o orquestrador.</div>
+      <div style="font-family: monospace; font-size: 12px; line-height: 2;">
+        <div style="color: #4ade80;">Você define tools (funções Python)</div>
+        <div style="color: #888; padding-left: 12px;">→ create_transaction(), apply_label()...</div>
+        <div style="color: #4ade80;">O agente recebe a instrução</div>
+        <div style="color: #888; padding-left: 12px;">→ "Gastei 89 no Rappi"</div>
+        <div style="color: #f7c948;">↺ O agente entra em loop:</div>
+        <div style="color: #888; padding-left: 12px;">→ pensa → decide chamar create_transaction</div>
+        <div style="color: #888; padding-left: 12px;">→ recebe resultado → confirma → para</div>
+      </div>
+      <div style="margin-top: 16px; padding: 10px; background: #1e1e30; border-radius: 6px; font-size: 11px; color: #666; line-height: 1.6;">
+        O Gemini <strong style="color: #aaa;">decide quais funções chamar e quando parar</strong>.<br>
+        Seu Python são só as tools.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 24px;">
+  <h3>O loop que o ADK gerencia pra você</h3>
+  <div style="background: #1a1a2e; padding: 16px; border-radius: 8px; font-family: monospace; font-size: 12px; line-height: 1.8;">
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      <div style="background: #2a2a3e; padding: 6px 10px; border-radius: 20px; color: #7c8cf8;">User input</div>
+      <div style="color: #555;">→</div>
+      <div style="background: #2a2a3e; padding: 6px 10px; border-radius: 20px; color: #f7c948;">Gemini pensa</div>
+      <div style="color: #555;">→</div>
+      <div style="background: #2a2a3e; padding: 6px 10px; border-radius: 20px; color: #f97316;">Chama tool</div>
+      <div style="color: #555;">→</div>
+      <div style="background: #2a2a3e; padding: 6px 10px; border-radius: 20px; color: #4ade80;">Tool executa</div>
+      <div style="color: #555;">→</div>
+      <div style="background: #2a2a3e; padding: 6px 10px; border-radius: 20px; color: #f7c948;">Gemini avalia resultado</div>
+      <div style="color: #555; font-weight: bold;">↺</div>
+    </div>
+    <div style="margin-top: 10px; color: #555; font-size: 11px;">Esse ciclo repete até o Gemini decidir que está feito. Pode ser 1 tool call ou 10. Você não controla — o modelo decide.</div>
+  </div>
+</div>
+
+<div style="margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+  <div style="padding: 12px; background: #0f2b1e; border: 1px solid #1a5c35; border-radius: 6px;">
+    <div style="color: #4ade80; font-size: 12px; font-weight: bold; margin-bottom: 6px;">✅ Você ganha com ADK</div>
+    <ul style="font-size: 11px; color: #888; margin: 0; padding-left: 16px; line-height: 1.8;">
+      <li>Código mais limpo — tools são funções puras</li>
+      <li>Agente pode re-tentar se tool falhar</li>
+      <li>Fácil adicionar novos comportamentos (nova tool)</li>
+      <li>Multi-agente nativo (Nami + Lucy coordenados)</li>
+      <li>Memória de sessão built-in</li>
+    </ul>
+  </div>
+  <div style="padding: 12px; background: #2b1a0f; border: 1px solid #5c3a1a; border-radius: 6px;">
+    <div style="color: #f97316; font-size: 12px; font-weight: bold; margin-bottom: 6px;">⚠️ Trade-offs</div>
+    <ul style="font-size: 11px; color: #888; margin: 0; padding-left: 16px; line-height: 1.8;">
+      <li>Menos previsível (agente decide o fluxo)</li>
+      <li>Mais tokens por execução (múltiplas chamadas)</li>
+      <li>Mais difícil de debugar</li>
+      <li>Para casos simples, pode ser overkill</li>
+      <li>Requer refactor do código existente</li>
+    </ul>
+  </div>
+</div>

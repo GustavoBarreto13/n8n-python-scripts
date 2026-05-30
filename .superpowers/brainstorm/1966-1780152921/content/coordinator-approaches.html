@@ -1,0 +1,69 @@
+<h2>Como implementar o coordenador único</h2>
+<p class="subtitle">3 abordagens — escolha baseada em complexidade vs. poder</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Script stateless (mais simples)</h3>
+      <p>n8n chama <code>coordinator/agent.py --query "..."</code> via spawnSync.<br>
+      ADK roda, responde, termina. Sem memória entre mensagens.</p>
+      <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
+        <div style="padding: 6px 8px; background: #0f2b1e; border-radius: 4px; color: #4ade80;">✅ Zero infra nova<br>✅ Fit perfeito com n8n<br>✅ Fácil debugar</div>
+        <div style="padding: 6px 8px; background: #2b1a0f; border-radius: 4px; color: #f97316;">⚠️ Sem memória<br>⚠️ "quanto gastei?" sem contexto<br>⚠️ Cada msg é conversa nova</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Serviço persistente no VPS (recomendado)</h3>
+      <p>Coordinator roda como processo Python permanente no Docker.<br>
+      n8n chama via HTTP. Mantém sessão por usuário do Telegram.</p>
+      <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
+        <div style="padding: 6px 8px; background: #0f2b1e; border-radius: 4px; color: #4ade80;">✅ Memória entre mensagens<br>✅ "continue o que falamos" funciona<br>✅ Ainda no seu VPS</div>
+        <div style="padding: 6px 8px; background: #2b1a0f; border-radius: 4px; color: #f97316;">⚠️ Precisa de container novo<br>⚠️ Gerenciar uptime/restart<br>⚠️ Um pouco mais complexo</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Vertex AI Agent Engine (Google Cloud)</h3>
+      <p>Deploy do coordinator no Google Cloud.<br>
+      Google gerencia sessões, scaling e uptime. n8n chama via API.</p>
+      <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
+        <div style="padding: 6px 8px; background: #0f2b1e; border-radius: 4px; color: #4ade80;">✅ Managed, sem ops<br>✅ Sessões nativas<br>✅ Integração GCP (BigQuery etc.)</div>
+        <div style="padding: 6px 8px; background: #2b1a0f; border-radius: 4px; color: #f97316;">⚠️ Custo GCP por query<br>⚠️ Setup mais complexo<br>⚠️ Vendor lock-in Google</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top: 20px; background: #1a1a2e; border-radius: 8px; padding: 16px;">
+  <h3 style="margin-top: 0;">O que muda no Telegram com a opção B (recomendada)</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 11px; font-family: monospace;">
+    <div>
+      <div style="color: #555; margin-bottom: 6px;">HOJE — dois fluxos separados</div>
+      <div style="color: #aaa; line-height: 2;">
+        <div>Telegram → n8n → nami/main.py → Telegram</div>
+        <div style="color: #555;">Schedule → lucy/main.py → Telegram</div>
+      </div>
+    </div>
+    <div>
+      <div style="color: #555; margin-bottom: 6px;">COM COORDENADOR — um ponto de entrada</div>
+      <div style="color: #aaa; line-height: 2;">
+        <div><span style="color:#4ade80;">Telegram → n8n → coordinator → Telegram</span></div>
+        <div style="color: #555;">Schedule → lucy/main.py → Telegram (batch, não muda)</div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top: 12px; padding: 8px 10px; background: #1e2030; border-radius: 4px; font-size: 10px; color: #555; line-height: 1.8;">
+    O digest diário (batch) continua rodando separado — não faz sentido passar pelo coordinator.<br>
+    O coordinator é só para interações em tempo real iniciadas pelo usuário.
+  </div>
+</div>

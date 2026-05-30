@@ -1,0 +1,87 @@
+<h2>Lucy com Google ADK</h2>
+<p class="subtitle">Como a arquitetura muda — e o que fica igual</p>
+
+<div class="section">
+  <h3>Tradução direta: o que hoje é "lógica Python" vira "tools"</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <div style="background: #1a1a2e; border-radius: 8px; overflow: hidden;">
+      <div style="background: #2a2a3e; padding: 8px 12px; font-size: 11px; color: #888;">HOJE — main.py (script linear)</div>
+      <div style="padding: 12px; font-family: monospace; font-size: 11px; line-height: 1.8; color: #aaa;">
+        <div><span style="color:#7c8cf8;">connect_imap()</span> ← Python</div>
+        <div><span style="color:#7c8cf8;">fetch_yesterday_emails()</span> ← Python</div>
+        <div><span style="color:#f7c948;">gemini_categorize(emails)</span> ← 1 chamada</div>
+        <div><span style="color:#7c8cf8;">parse_response()</span> ← Python</div>
+        <div style="padding-left: 8px; color: #555;">for each email:</div>
+        <div style="padding-left: 16px;"><span style="color:#7c8cf8;">imap.store(uid, label)</span> ← Python</div>
+        <div style="padding-left: 16px;"><span style="color:#7c8cf8;">imap.archive(uid)</span> ← Python</div>
+        <div><span style="color:#7c8cf8;">build_digest()</span> ← Python</div>
+      </div>
+    </div>
+    <div style="background: #1a1a2e; border-radius: 8px; overflow: hidden;">
+      <div style="background: #2a2a3e; padding: 8px 12px; font-size: 11px; color: #888;">ADK — agent + tools</div>
+      <div style="padding: 12px; font-family: monospace; font-size: 11px; line-height: 1.8; color: #aaa;">
+        <div style="color: #4ade80;">@tool</div>
+        <div><span style="color:#4ade80;">fetch_emails()</span> → retorna lista</div>
+        <div style="margin-top: 4px; color: #4ade80;">@tool</div>
+        <div><span style="color:#4ade80;">label_and_archive(uid, label)</span></div>
+        <div style="margin-top: 4px; color: #4ade80;">@tool</div>
+        <div><span style="color:#4ade80;">send_digest(html)</span></div>
+        <div style="margin-top: 8px; color: #f7c948;">agent = Agent(</div>
+        <div style="padding-left: 12px; color: #f7c948;">tools=[fetch, label, digest]</div>
+        <div style="color: #f7c948;">)</div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top: 8px; padding: 8px 12px; background: #1e2030; border-radius: 4px; font-size: 11px; color: #666;">
+    O Gemini recebe a instrução → chama fetch_emails() → lê os resultados → decide categoria por email → chama label_and_archive() para cada → chama send_digest()
+  </div>
+</div>
+
+<div class="section">
+  <h3>O que muda de verdade: Lucy pode <em>raciocinar</em> em múltiplos passos</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+    <div style="padding: 12px; background: #1a1a2e; border-radius: 8px; font-size: 12px;">
+      <div style="color: #888; margin-bottom: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Hoje</div>
+      <ul style="color: #aaa; margin: 0; padding-left: 16px; line-height: 2;">
+        <li>Categoriza todos de uma vez</li>
+        <li>Se email é ambíguo → escolha arbitrária</li>
+        <li>Se IMAP falha em 1 → script quebra</li>
+        <li>Sempre processa ontem, sem flexibilidade</li>
+      </ul>
+    </div>
+    <div style="padding: 12px; background: #0f2b1e; border-radius: 8px; font-size: 12px;">
+      <div style="color: #4ade80; margin-bottom: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Com ADK</div>
+      <ul style="color: #aaa; margin: 0; padding-left: 16px; line-height: 2;">
+        <li>Agrupa emails similares e processa em lote</li>
+        <li>Email ambíguo → raciocina sobre contexto</li>
+        <li>Falha em 1 → retenta só aquele</li>
+        <li>Você pode perguntar: "emails de hoje sobre finanças"</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔥 O que fica realmente interessante: Lucy interativa</h3>
+  <div style="background: #1a1a2e; border-radius: 8px; padding: 16px; font-size: 12px;">
+    <div style="color: #aaa; margin-bottom: 12px;">Com ADK, Lucy deixa de ser um <strong style="color:#e2e8f0;">script agendado</strong> e pode virar um <strong style="color:#7c8cf8;">agente conversacional</strong> no Telegram:</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+      <div>
+        <div style="font-size: 11px; color: #555; margin-bottom: 6px;">VOCÊ (via Telegram)</div>
+        <div style="background: #2a2a3e; padding: 8px 10px; border-radius: 6px; color: #e2e8f0; margin-bottom: 6px;">"Lucy, tem algo urgente na minha caixa?"</div>
+        <div style="background: #2a2a3e; padding: 8px 10px; border-radius: 6px; color: #e2e8f0; margin-bottom: 6px;">"Quais emails de trabalho preciso responder hoje?"</div>
+        <div style="background: #2a2a3e; padding: 8px 10px; border-radius: 6px; color: #e2e8f0;">"Arquiva todos de marketing"</div>
+      </div>
+      <div>
+        <div style="font-size: 11px; color: #555; margin-bottom: 6px;">LUCY (ADK agent)</div>
+        <div style="background: #1e3a2e; border: 1px solid #2a5a3e; padding: 8px 10px; border-radius: 6px; color: #4ade80; margin-bottom: 6px; font-size: 11px;">fetch_emails() → filtra prioridade HIGH → responde</div>
+        <div style="background: #1e3a2e; border: 1px solid #2a5a3e; padding: 8px 10px; border-radius: 6px; color: #4ade80; margin-bottom: 6px; font-size: 11px;">fetch_emails(category="Trabalho") → filtra action="responder"</div>
+        <div style="background: #1e3a2e; border: 1px solid #2a5a3e; padding: 8px 10px; border-radius: 6px; color: #4ade80; font-size: 11px;">fetch_emails() → label_and_archive(uid, "Outros") × N</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 16px; padding: 12px 16px; background: #2b1a0f; border-left: 3px solid #f97316; border-radius: 4px; font-size: 12px; color: #aaa;">
+  <strong style="color: #f97316;">Honestidade sobre o caso atual:</strong> O Lucy hoje (digest diário em batch) não ganha muito ao migrar pro ADK — 1 chamada Gemini bem estruturada é mais barata e previsível que 50+ tool calls. O ADK brilha quando você quer <em>interatividade</em> ou <em>raciocínio complexo</em>.
+</div>

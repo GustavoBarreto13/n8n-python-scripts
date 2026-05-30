@@ -1,0 +1,107 @@
+<h2>Design: Coordinator como serviço persistente</h2>
+<p class="subtitle">Arquitetura completa — o que muda, o que fica igual</p>
+
+<div class="section">
+  <h3>Visão geral do sistema</h3>
+  <div style="background: #1a1a2e; border-radius: 10px; padding: 20px; font-family: monospace; font-size: 11px;">
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+      <div style="background: #2a1a4e; border: 1px solid #4a3a7e; border-radius: 8px; padding: 10px; text-align: center;">
+        <div style="color: #7c8cf8; font-weight: bold; margin-bottom: 4px;">📱 Telegram</div>
+        <div style="color: #555; font-size: 10px;">"lança 89 no Rappi"</div>
+      </div>
+      <div style="background: #1e3a1e; border: 1px solid #3a6a3a; border-radius: 8px; padding: 10px; text-align: center;">
+        <div style="color: #4ade80; font-weight: bold; margin-bottom: 4px;">n8n</div>
+        <div style="color: #555; font-size: 10px;">Telegram Trigger<br>→ HTTP Request<br>→ Telegram Send</div>
+      </div>
+      <div style="background: #2a1a1e; border: 1px solid #6a3a3a; border-radius: 8px; padding: 10px; text-align: center;">
+        <div style="color: #f97316; font-weight: bold; margin-bottom: 4px;">coordinator:8080</div>
+        <div style="color: #555; font-size: 10px;">FastAPI + ADK<br>POST /chat<br>{user_id, message}</div>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 12px; color: #555; font-size: 10px;">↕ sub_agents</div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+      <div style="background: #1e2a1e; border: 1px solid #2a5a3e; border-radius: 8px; padding: 10px;">
+        <div style="color: #f7c948; font-weight: bold; margin-bottom: 6px;">🪙 Nami Agent</div>
+        <div style="color: #555; font-size: 10px; line-height: 1.8;">
+          create_transaction()<br>
+          query_expenses()<br>
+          update_transaction()<br>
+          delete_transaction()
+        </div>
+        <div style="margin-top: 6px; padding: 4px 6px; background: #1a1a2e; border-radius: 3px; color: #555; font-size: 10px;">→ Notion API</div>
+      </div>
+      <div style="background: #1e2a2e; border: 1px solid #2a4a5a; border-radius: 8px; padding: 10px;">
+        <div style="color: #22d3ee; font-weight: bold; margin-bottom: 6px;">✉️ Lucy Agent</div>
+        <div style="color: #555; font-size: 10px; line-height: 1.8;">
+          fetch_emails(filtros)<br>
+          label_and_archive()<br>
+          search_emails()<br>
+          get_email_body()
+        </div>
+        <div style="margin-top: 6px; padding: 4px 6px; background: #1a1a2e; border-radius: 3px; color: #555; font-size: 10px;">→ Gmail IMAP</div>
+      </div>
+    </div>
+
+    <div style="margin-top: 12px; padding: 8px 10px; background: #1e2030; border-radius: 4px; color: #555; font-size: 10px; line-height: 1.8;">
+      Session store (InMemorySessionService): uma sessão por chat_id do Telegram.<br>
+      Histórico em memória — sobrevive entre mensagens, reinicia com o container.
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Estrutura de arquivos — o que é novo vs. o que muda</h3>
+  <div style="background: #1a1a2e; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 11px; line-height: 2;">
+    <div style="color: #555;">n8n-python-scripts/</div>
+    <div style="color: #4ade80; padding-left: 12px;">coordinator/          <span style="color: #333;">← NOVO</span></div>
+    <div style="color: #4ade80; padding-left: 24px;">main.py               <span style="color: #333;">← FastAPI server (POST /chat)</span></div>
+    <div style="color: #4ade80; padding-left: 24px;">agent.py              <span style="color: #333;">← ADK coordinator + sub_agents</span></div>
+    <div style="color: #4ade80; padding-left: 24px;">Dockerfile            <span style="color: #333;">← container separado</span></div>
+    <div style="color: #aaa; padding-left: 12px;">nami_finance_agent/</div>
+    <div style="color: #f7c948; padding-left: 24px;">tools.py              <span style="color: #333;">← NOVO: funções extraídas do main.py</span></div>
+    <div style="color: #aaa; padding-left: 24px;">main.py               <span style="color: #333;">← não muda (script batch)</span></div>
+    <div style="color: #aaa; padding-left: 12px;">lucy_email_agent/</div>
+    <div style="color: #f7c948; padding-left: 24px;">tools.py              <span style="color: #333;">← NOVO: funções extraídas do main.py</span></div>
+    <div style="color: #aaa; padding-left: 24px;">main.py               <span style="color: #333;">← não muda (batch diário)</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>O que muda no n8n</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 11px;">
+    <div style="background: #2a2a3e; border-radius: 8px; padding: 12px;">
+      <div style="color: #555; margin-bottom: 8px;">ANTES — Workflow Nami (Telegram)</div>
+      <div style="font-family: monospace; color: #aaa; line-height: 2;">
+        Telegram Trigger<br>
+        → Code node (spawnSync nami/main.py)<br>
+        → Telegram Send
+      </div>
+    </div>
+    <div style="background: #1e2a1e; border: 1px solid #2a4a2e; border-radius: 8px; padding: 12px;">
+      <div style="color: #4ade80; margin-bottom: 8px;">DEPOIS — Workflow unificado</div>
+      <div style="font-family: monospace; color: #aaa; line-height: 2;">
+        Telegram Trigger<br>
+        <span style="color: #4ade80;">→ HTTP Request (POST /chat)</span><br>
+        → Telegram Send
+      </div>
+    </div>
+  </div>
+  <div style="margin-top: 8px; padding: 8px 10px; background: #1e2030; border-radius: 4px; font-size: 10px; color: #555;">
+    O workflow do Lucy batch (Schedule 8h → spawnSync → Telegram) não muda em nada.
+  </div>
+</div>
+
+<div class="section">
+  <h3>Sessão: como o coordinator "lembra" da conversa</h3>
+  <div style="background: #1a1a2e; border-radius: 8px; padding: 12px; font-size: 11px; line-height: 1.9; color: #aaa;">
+    <div>Cada <code style="background:#2a2a3e; padding:1px 4px; border-radius:3px;">chat_id</code> do Telegram → uma sessão ADK separada.</div>
+    <div style="color: #555;">Você manda "lança 89 no Rappi" → coordinator responde "Lançado ✅"</div>
+    <div style="color: #555;">Você manda "na verdade era 79" → coordinator sabe qual transação corrigir.</div>
+    <div style="margin-top: 8px; padding: 6px 8px; background: #2b1a0f; border-radius: 4px; color: #f97316; font-size: 10px;">
+      ⚠️ Memória é in-memory: reiniciar o container limpa o histórico. Para persistência real, precisaria de Firestore ou Redis — não necessário agora.
+    </div>
+  </div>
+</div>

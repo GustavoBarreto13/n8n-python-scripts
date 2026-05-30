@@ -1,0 +1,124 @@
+<h2>Multi-agente: um coordenador que controla Nami e Lucy</h2>
+<p class="subtitle">No ADK, agentes podem ser tools de outros agentes — nativamente</p>
+
+<div class="section">
+  <h3>A hierarquia</h3>
+  <div style="background: #1a1a2e; border-radius: 10px; padding: 20px;">
+
+    <div style="text-align: center; margin-bottom: 16px;">
+      <div style="display: inline-block; background: #2a1a4e; border: 2px solid #7c8cf8; border-radius: 10px; padding: 12px 24px;">
+        <div style="color: #7c8cf8; font-weight: bold; font-size: 14px;">🧠 Coordenador</div>
+        <div style="color: #555; font-size: 11px; margin-top: 2px;">recebe mensagens do Telegram</div>
+        <div style="color: #555; font-size: 10px;">decide quem chamar e quando</div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: center; gap: 60px; position: relative;">
+      <div style="position: absolute; top: -16px; left: 50%; transform: translateX(-120px); width: 2px; height: 16px; background: #7c8cf8;"></div>
+      <div style="position: absolute; top: -16px; left: 50%; transform: translateX(118px); width: 2px; height: 16px; background: #7c8cf8;"></div>
+      <div style="position: absolute; top: -16px; left: 50%; transform: translateX(-120px) translateY(-1px); width: 240px; height: 2px; background: #7c8cf8;"></div>
+
+      <div style="background: #1e2a3e; border: 1px solid #2a4a6e; border-radius: 8px; padding: 12px 16px; width: 160px;">
+        <div style="color: #f7c948; font-weight: bold; font-size: 13px; margin-bottom: 6px;">🪙 Nami Agent</div>
+        <div style="font-size: 10px; color: #666; line-height: 1.8;">
+          <div>+ create_transaction()</div>
+          <div>+ query_expenses()</div>
+          <div>+ delete_transaction()</div>
+        </div>
+      </div>
+
+      <div style="background: #1e2a3e; border: 1px solid #2a4a6e; border-radius: 8px; padding: 12px 16px; width: 160px;">
+        <div style="color: #22d3ee; font-weight: bold; font-size: 13px; margin-bottom: 6px;">✉️ Lucy Agent</div>
+        <div style="font-size: 10px; color: #666; line-height: 1.8;">
+          <div>+ fetch_emails()</div>
+          <div>+ label_and_archive()</div>
+          <div>+ search_emails()</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; padding: 10px 14px; background: #1e2030; border-radius: 6px; font-size: 10px; color: #555; text-align: center;">
+      No ADK: <code style="color: #aaa;">coordinator = Agent(sub_agents=[nami_agent, lucy_agent])</code> — isso é tudo.
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Pedidos que cruzam os dois agentes</h3>
+  <div style="display: flex; flex-direction: column; gap: 10px;">
+
+    <div style="background: #1a1a2e; border-radius: 8px; overflow: hidden;">
+      <div style="display: grid; grid-template-columns: 2fr 1fr 2fr; gap: 0;">
+        <div style="padding: 10px 12px; font-size: 11px; color: #e2e8f0;">"Olha esse email do Nubank e já lança a transação no Notion"</div>
+        <div style="background: #2a2a3e; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #7c8cf8; padding: 6px; text-align: center;">Lucy lê<br>→ Nami cria</div>
+        <div style="padding: 10px 12px; font-size: 10px; color: #555; line-height: 1.7;">
+          Lucy.fetch_emails(from="nubank") →<br>
+          Nami.create_transaction(valor=..., conta="Nu")
+        </div>
+      </div>
+    </div>
+
+    <div style="background: #1a1a2e; border-radius: 8px; overflow: hidden;">
+      <div style="display: grid; grid-template-columns: 2fr 1fr 2fr; gap: 0;">
+        <div style="padding: 10px 12px; font-size: 11px; color: #e2e8f0;">"Quanto gastei em delivery esse mês? E tem confirmação de pedido na caixa?"</div>
+        <div style="background: #2a2a3e; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #7c8cf8; padding: 6px; text-align: center;">paralelo</div>
+        <div style="padding: 10px 12px; font-size: 10px; color: #555; line-height: 1.7;">
+          Nami.query_expenses(cat="delivery") +<br>
+          Lucy.fetch_emails(keyword="pedido") → resposta unificada
+        </div>
+      </div>
+    </div>
+
+    <div style="background: #1a1a2e; border-radius: 8px; overflow: hidden;">
+      <div style="display: grid; grid-template-columns: 2fr 1fr 2fr; gap: 0;">
+        <div style="padding: 10px 12px; font-size: 11px; color: #e2e8f0;">"Resumo do meu dia: o que gastei e o que está pendente na caixa"</div>
+        <div style="background: #2a2a3e; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #7c8cf8; padding: 6px; text-align: center;">paralelo<br>→ síntese</div>
+        <div style="padding: 10px 12px; font-size: 10px; color: #555; line-height: 1.7;">
+          Nami.query_expenses(today=True) +<br>
+          Lucy.fetch_emails(action="responder") → síntese final
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section">
+  <h3>Como o ADK lida com isso — o código</h3>
+  <div style="background: #1a1a2e; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 11px; line-height: 1.9; color: #aaa;">
+    <div style="color: #555; margin-bottom: 8px;"># Cada agente é independente:</div>
+    <div><span style="color:#f7c948;">nami</span> = Agent(name=<span style="color:#4ade80;">"nami"</span>, model=<span style="color:#4ade80;">"gemini-2.0-flash"</span>, tools=[create_tx, query_expenses])</div>
+    <div><span style="color:#22d3ee;">lucy</span> = Agent(name=<span style="color:#4ade80;">"lucy"</span>, model=<span style="color:#4ade80;">"gemini-2.0-flash"</span>, tools=[fetch_emails, archive])</div>
+    <div style="margin-top: 8px; color: #555;"># O coordenador usa os dois como sub-agentes:</div>
+    <div><span style="color:#7c8cf8;">coordinator</span> = Agent(</div>
+    <div style="padding-left: 16px;">name=<span style="color:#4ade80;">"coordinator"</span>,</div>
+    <div style="padding-left: 16px;">model=<span style="color:#4ade80;">"gemini-2.0-flash"</span>,</div>
+    <div style="padding-left: 16px;"><span style="color:#f97316;">sub_agents</span>=[nami, lucy],  <span style="color:#555;"># ← isso é tudo</span></div>
+    <div style="padding-left: 16px;">instruction=<span style="color:#4ade80;">"Você gerencia finanças (Nami) e email (Lucy)..."</span></div>
+    <div>)</div>
+    <div style="margin-top: 8px; color: #555;"># Uso:</div>
+    <div>runner.run(<span style="color:#4ade80;">"lança 89 no Rappi e arquiva o email de confirmação"</span>)</div>
+    <div style="color: #555; margin-left: 16px;"># → coordinator decide → chama Nami + Lucy → resposta única</div>
+  </div>
+</div>
+
+<div style="margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+  <div style="padding: 12px; background: #0f2b1e; border: 1px solid #1a5c35; border-radius: 8px; font-size: 11px;">
+    <div style="color: #4ade80; font-weight: bold; margin-bottom: 6px;">O que você ganha</div>
+    <ul style="color: #aaa; margin: 0; padding-left: 16px; line-height: 1.9;">
+      <li>Um único ponto de entrada no Telegram</li>
+      <li>Ações cross-agente sem código extra</li>
+      <li>Cada agente continua independente</li>
+      <li>Fácil adicionar um 3º agente depois</li>
+    </ul>
+  </div>
+  <div style="padding: 12px; background: #2b1a0f; border: 1px solid #5c3a1a; border-radius: 8px; font-size: 11px;">
+    <div style="color: #f97316; font-weight: bold; margin-bottom: 6px;">O que ainda precisa resolver</div>
+    <ul style="color: #aaa; margin: 0; padding-left: 16px; line-height: 1.9;">
+      <li>Sessão: onde fica o histórico? (InMemory ou Firestore)</li>
+      <li>Auth: cada agente tem suas próprias credenciais</li>
+      <li>Deploy: o ADK roda como processo Python — não substitui o n8n</li>
+      <li>Custo: queries cross-agente são mais caras</li>
+    </ul>
+  </div>
+</div>
