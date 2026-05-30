@@ -7,9 +7,97 @@ Atualize este documento com qualquer informação relevante.
 
 ## O que é este repo
 
-Scripts Python chamados pelo n8n via `execSync` em Code nodes. Cada script é um módulo independente que executa uma tarefa específica e retorna JSON via stdout.
+Scripts Python chamados pelo n8n via `spawnSync` em Code nodes. Cada script é um módulo independente que executa uma tarefa específica e retorna JSON via stdout.
 
 O n8n não executa os scripts diretamente como subprocesso — ele usa o `child_process` do Node.js pra chamar o Python.
+
+---
+
+## Relação com makima_personal_agent
+
+Este repo é a **base de implementação** do [`makima_personal_agent`](https://github.com/Gusstavo42/makima_personal_agent) — um coordinator multi-agente com Google ADK que expõe todos esses scripts como agentes interativos via Telegram.
+
+### O que precisa ser criado aqui para cada agente
+
+Cada módulo que vira um agente da Makima precisa de dois arquivos novos além do `main.py` existente:
+
+```
+modulo/
+├── main.py      ← não muda (batch, chamado pelo n8n)
+├── tools.py     ← NOVO: funções puras extraídas do main.py
+└── agent.py     ← NOVO: Agent ADK usando as tools
+```
+
+**`tools.py`** — extrai as funções de acesso a APIs externas do `main.py` e as expõe como callables com docstrings precisas. O Gemini usa o nome da função + docstring para decidir quando e como chamá-la. Docstrings vagas = uso incorreto pelo modelo.
+
+```python
+# Exemplo: nami_finance_agent/tools.py
+def create_transaction(name: str, valor: float, categoria: str, conta: str, data: str) -> dict:
+    """
+    Cria uma transação financeira no Notion.
+    categoria deve ser uma de: Alimentação, Transporte, Lazer, Saúde, Assinatura, ...
+    conta deve ser uma de: Nubank, Inter, Bradesco, Dinheiro, ...
+    data no formato YYYY-MM-DD.
+    """
+    # código que hoje está em main.py
+```
+
+**`agent.py`** — define o `Agent` ADK usando as tools do módulo. Importado pelo coordinator da Makima.
+
+```python
+# Exemplo: nami_finance_agent/agent.py
+from google.adk.agents import Agent
+from nami_finance_agent.tools import create_transaction, query_expenses, ...
+
+nami_agent = Agent(
+    name="nami",
+    model="gemini-2.0-flash",
+    instruction="Você é a Nami, agente financeira...",
+    tools=[create_transaction, query_expenses, update_transaction, delete_transaction],
+)
+```
+
+### Agentes a implementar (por ordem de prioridade)
+
+| Módulo | Agent | Tools principais | Fase |
+|---|---|---|---|
+| `nami_finance_agent` | `nami_agent` | create_transaction, query_expenses, update_transaction, delete_transaction | 1 |
+| `lucy_email_agent` | `lucy_agent` | fetch_emails, label_and_archive, search_emails, get_email_body | 2 |
+| `ticktick_notion_sync` | `tasks_agent` | get_tasks_today, create_task, complete_task, list_overdue | 4 |
+| `series_sync` + `gustavoboxd` + `anime_sync` | `media_agent` | get_watching_now, get_watch_history, mark_episode_watched, get_stats | 4 |
+| `books_sync` | `books_agent` | get_current_book, get_read_history, add_book, mark_finished | 4 |
+
+### Regras ao extrair tools.py
+
+1. **`main.py` não muda** — o n8n continua chamando exatamente como antes
+2. **Tools são funções puras** — sem `argparse`, sem `print()`, sem `sys.exit()`. Recebem parâmetros, retornam dict.
+3. **Docstrings são contratos** — descrever o que a função faz, quais valores são válidos para cada parâmetro, o que retorna. O modelo lê isso para decidir como usar.
+4. **Erros retornam dict**, não exceções — `{"status": "error", "error": str(e)}` em vez de raise.
+5. **Credenciais via env vars** — igual ao padrão atual, sem mudança.
+
+### BigQuery mirror (Fase 3)
+
+Scripts de sync que hoje escrevem só no Notion precisarão também escrever no BQ ao final:
+
+```python
+# Adição ao final de series_sync/main.py, gustavoboxd/main.py, etc.
+update_notion_page(data)
+upsert_bigquery(data, table="media.series_history")  # linha nova
+```
+
+Schemas definidos no `PLAN.md` deste repo.
+
+### Como o coordinator importa os agents
+
+O `makima_personal_agent` importa os agents diretamente por path. No VPS, ambos os repos ficam disponíveis no mesmo ambiente Python:
+
+```python
+# coordinator/agent.py no makima_personal_agent
+from nami_finance_agent.agent import nami_agent
+from lucy_email_agent.agent import lucy_agent
+```
+
+Isso requer que o `n8n-python-scripts` esteja no `PYTHONPATH` do container da Makima — configurado no Dockerfile ou docker-compose do `makima_personal_agent`.
 
 ---
 
